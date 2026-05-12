@@ -266,6 +266,12 @@ function normalizeBudgetMode(value) {
   return mode;
 }
 
+function normalizeBudgetScope(value) {
+  const scope = normalizeText(value || 'default').toLowerCase();
+  assert(['default', 'month'].includes(scope), 'Budget scope must be default or month.');
+  return scope;
+}
+
 function sendError(res, error) {
   const status = error?.status || 500;
   const message = status === 500 ? 'Unexpected server error.' : error.message;
@@ -592,8 +598,12 @@ function normalizeRecurringOverridePayload(body, existing = null) {
 }
 
 function normalizeBudgetPayload(body, existing = null) {
+  const scope = normalizeBudgetScope(body?.scope ?? existing?.scope ?? 'default');
   return {
-    month: normalizeMonthKey(body?.month ?? existing?.month, 'Budget month'),
+    scope,
+    month: scope === 'month'
+      ? normalizeMonthKey(body?.month ?? existing?.month, 'Budget month')
+      : null,
     category: normalizeRequiredText(body?.category ?? existing?.category, 'Budget category'),
     direction: normalizeBudgetDirection(body?.direction ?? existing?.direction ?? 'expense'),
     mode: normalizeBudgetMode(body?.mode ?? existing?.mode ?? 'limit'),
@@ -954,12 +964,12 @@ app.post('/api/budgets/bulk', requireAuth, (req, res) => {
   try {
     assert(Array.isArray(req.body?.budgets), 'Budget planner payload is required.');
     const summary = { created: 0, updated: 0, deleted: 0 };
+    const budgetScope = (budget) => budget.scope || 'default';
 
     req.body.budgets.forEach((item) => {
       const existing = item?.id ? getBudgetById(db, item.id) : null;
-      const enabled = item?.enabled !== false;
       const amount = Number(item?.amount || 0);
-      const shouldPersist = enabled && amount > 0;
+      const shouldPersist = amount > 0;
 
       if (!shouldPersist) {
         if (existing) {
@@ -970,6 +980,7 @@ app.post('/api/budgets/bulk', requireAuth, (req, res) => {
       }
 
       const payload = normalizeBudgetPayload({
+        scope: item?.scope ?? 'default',
         month: item?.month,
         category: item?.category,
         direction: item?.direction ?? 'expense',
@@ -983,7 +994,8 @@ app.post('/api/budgets/bulk', requireAuth, (req, res) => {
         summary.updated += 1;
       } else {
         const duplicate = listBudgets(db).find((budget) => (
-          budget.month === payload.month
+          budgetScope(budget) === payload.scope
+          && (payload.scope !== 'month' || budget.month === payload.month)
           && budget.direction === payload.direction
           && budget.category.trim().toLowerCase() === payload.category.trim().toLowerCase()
         ));

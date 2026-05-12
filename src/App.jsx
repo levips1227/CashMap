@@ -402,29 +402,17 @@ function deriveCategoryOptions({ lookups, transactions, recurringRules, budgets 
   return [...categories.values()].sort((left, right) => left.localeCompare(right));
 }
 
-function buildBudgetPlannerRows({ categories, budgets, month }) {
-  const expenseBudgets = budgets.filter((budget) => budget.month === month && budget.direction === 'expense');
-  const budgetMap = new Map(expenseBudgets.map((budget) => [budget.category.trim().toLowerCase(), budget]));
-  const allCategoryKeys = new Set([
-    ...categories.map((category) => category.trim().toLowerCase()),
-    ...expenseBudgets.map((budget) => budget.category.trim().toLowerCase()),
-  ]);
-
-  return [...allCategoryKeys]
-    .map((key) => {
-      const existing = budgetMap.get(key);
-      const category = existing?.category || categories.find((item) => item.trim().toLowerCase() === key) || key;
-      return {
-        rowId: `budget-${month}-${key}`,
-        id: existing?.id ?? null,
-        category,
-        enabled: Boolean(existing),
-        amount: existing ? String(existing.amount) : '',
-        mode: existing?.mode || 'limit',
-        notes: existing?.notes || '',
-      };
-    })
-    .sort((left, right) => left.category.localeCompare(right.category));
+function buildBudgetPlannerRows({ summaries }) {
+  return summaries.map((summary) => ({
+    rowId: `budget-${summary.direction}-${summary.category.trim().toLowerCase()}`,
+    defaultBudgetId: summary.defaultBudgetId,
+    monthBudgetId: summary.monthBudgetId,
+    category: summary.category,
+    direction: summary.direction,
+    amount: summary.hasBudget ? formatCurrency(summary.amount) : '',
+    mode: summary.mode,
+    notes: summary.notes || '',
+  }));
 }
 
 function getInitialFilters() {
@@ -445,6 +433,18 @@ function normalizeStatusFilterValue(label) {
 
 function normalizeUsername(value) {
   return String(value || '').trim();
+}
+
+function parseCurrencyInput(value) {
+  const normalized = String(value ?? '').replace(/[$,\s]/g, '');
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatCurrencyInput(value) {
+  const text = String(value ?? '').trim();
+  if (!text) return '';
+  return formatCurrency(parseCurrencyInput(text));
 }
 
 function hasAnotherActiveAdmin(users, excludeId = null) {
@@ -491,9 +491,18 @@ function rangeTitle(filters) {
 
 function describeBudgetStatus(summary) {
   if (summary.status === 'over') return 'Projected to exceed this line.';
+  if (summary.status === 'short') return 'Projected income is below this target.';
+  if (summary.status === 'unbudgeted') return 'Activity exists, but no budget is set.';
   if (summary.status === 'met') return 'Goal already met in this month.';
   if (summary.mode === 'goal') return `${formatCurrency(summary.remaining)} still needed to reach the goal.`;
-  return `${formatCurrency(summary.remaining)} remaining before the limit.`;
+  return `${formatCurrency(summary.remaining)} projected variance against the budget.`;
+}
+
+function budgetStatusClassName(summary) {
+  if (summary?.overBudget || summary?.incomeShort) return 'pill danger';
+  if (summary?.unbudgeted) return 'pill warning';
+  if (summary?.goalMet || summary?.status === 'on-track') return 'pill success';
+  return 'pill muted';
 }
 
 function getLedgerSelectionId(entry) {
@@ -616,13 +625,34 @@ function SectionCard({ title, kicker, actions, children }) {
   );
 }
 
-function MetricCard({ label, value, meta, tone = 'cool' }) {
+function MetricCard({ label, value, meta, tone = 'cool', onClick }) {
+  const Tag = onClick ? 'button' : 'article';
   return (
-    <article className={`metric-card ${tone}`}>
+    <Tag type={onClick ? 'button' : undefined} className={`metric-card ${tone}${onClick ? ' clickable' : ''}`} onClick={onClick}>
       <div className="metric-label">{label}</div>
       <div className="metric-value">{value}</div>
       {meta ? <div className="metric-meta">{meta}</div> : null}
-    </article>
+    </Tag>
+  );
+}
+
+function SplitMetricCard({ label, leftLabel, leftValue, rightLabel, rightValue, meta, tone = 'cool', onClick }) {
+  const Tag = onClick ? 'button' : 'article';
+  return (
+    <Tag type={onClick ? 'button' : undefined} className={`metric-card split-metric-card ${tone}${onClick ? ' clickable' : ''}`} onClick={onClick}>
+      <div className="metric-label">{label}</div>
+      <div className="split-metric-values">
+        <div>
+          <span>{leftLabel}</span>
+          <strong>{leftValue}</strong>
+        </div>
+        <div>
+          <span>{rightLabel}</span>
+          <strong>{rightValue}</strong>
+        </div>
+      </div>
+      {meta ? <div className="metric-meta">{meta}</div> : null}
+    </Tag>
   );
 }
 
@@ -633,6 +663,46 @@ function Field({ label, hint, children }) {
       {children}
       {hint ? <span className="field-hint">{hint}</span> : null}
     </label>
+  );
+}
+
+function CategoryPicker({ value, onChange, options, placeholder = 'Select category' }) {
+  const [customActive, setCustomActive] = useState(false);
+  const matchedOption = options.find((option) => option.toLowerCase() === String(value || '').toLowerCase());
+
+  useEffect(() => {
+    if (value && !matchedOption) {
+      setCustomActive(true);
+    }
+  }, [value, matchedOption]);
+
+  return (
+    <div className="category-picker">
+      <select
+        value={customActive ? '__custom' : matchedOption || ''}
+        onChange={(event) => {
+          if (event.target.value === '__custom') {
+            setCustomActive(true);
+            return;
+          }
+          setCustomActive(false);
+          onChange(event.target.value);
+        }}
+      >
+        <option value="">{placeholder}</option>
+        {options.map((option) => (
+          <option key={option} value={option}>{option}</option>
+        ))}
+        <option value="__custom">Custom category...</option>
+      </select>
+      {customActive ? (
+        <input
+          value={value === '__custom' ? '' : value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder="Type category"
+        />
+      ) : null}
+    </div>
   );
 }
 
@@ -710,6 +780,10 @@ export default function App() {
   const [budgetMonth, setBudgetMonth] = useState(getMonthKey(getTodayKey()));
   const [budgetPlannerRows, setBudgetPlannerRows] = useState([]);
   const [budgetPlannerCategory, setBudgetPlannerCategory] = useState('');
+  const [budgetPlannerDirection, setBudgetPlannerDirection] = useState('expense');
+  const [budgetSaveScope, setBudgetSaveScope] = useState('default');
+  const [showBudgetWarnings, setShowBudgetWarnings] = useState(false);
+  const [showOverviewWarnings, setShowOverviewWarnings] = useState(false);
   const [reconciliationDraft, setReconciliationDraft] = useState(getDefaultReconciliationDraft());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsTab, setSettingsTab] = useState('profile');
@@ -779,8 +853,8 @@ export default function App() {
     !editingTransactionId && transactionDraft.recurringRuleId && transactionDraft.occurrenceKey,
   );
   const isEditingTransactionDraft = Boolean(editingTransactionId || isEditingGeneratedOccurrence);
-  const budgetRange = getMonthBounds(budgetMonth);
-  const budgetProjection = buildProjection({
+  const budgetRange = useMemo(() => getMonthBounds(budgetMonth), [budgetMonth]);
+  const budgetProjection = useMemo(() => buildProjection({
     accounts: data.accounts,
     transactions: data.transactions,
     recurringRules: data.recurringRules,
@@ -790,12 +864,20 @@ export default function App() {
     statusFilter: 'all',
     accountFilter: 'all',
     warningThreshold: lookups.cashWarningThreshold,
-  });
-  const budgetInsights = buildBudgetInsights({
+  }), [
+    data.accounts,
+    data.transactions,
+    data.recurringRules,
+    data.recurringOverrides,
+    budgetRange.startDate,
+    budgetRange.endDate,
+    lookups.cashWarningThreshold,
+  ]);
+  const budgetInsights = useMemo(() => buildBudgetInsights({
     budgets: data.budgets,
     entries: budgetProjection.allEntries,
     monthKey: budgetMonth,
-  });
+  }), [data.budgets, budgetProjection.allEntries, budgetMonth]);
   const reconciliationCandidates = data.transactions
     .filter((transaction) => {
       const accountId = Number(reconciliationDraft.accountId);
@@ -852,11 +934,9 @@ export default function App() {
 
   useEffect(() => {
     setBudgetPlannerRows(buildBudgetPlannerRows({
-      categories: categoryOptions,
-      budgets: data.budgets,
-      month: budgetMonth,
+      summaries: budgetInsights.summaries,
     }));
-  }, [budgetMonth, categoryOptions, data.budgets]);
+  }, [budgetMonth, budgetInsights.summaries]);
 
   useEffect(() => {
     const visibleIds = new Set(visibleLedgerSelectionKey ? visibleLedgerSelectionKey.split('|') : []);
@@ -1207,23 +1287,28 @@ export default function App() {
   function addBudgetPlannerCategory() {
     const category = budgetPlannerCategory.trim();
     if (!category) return;
-    const key = category.toLowerCase();
+    const direction = budgetPlannerDirection === 'income' ? 'income' : 'expense';
+    const key = `${direction}|${category.toLowerCase()}`;
     setBudgetPlannerRows((current) => {
-      if (current.some((row) => row.category.trim().toLowerCase() === key)) {
+      if (current.some((row) => `${row.direction}|${row.category.trim().toLowerCase()}` === key)) {
         return current;
       }
       return [
         ...current,
         {
-          rowId: `budget-${budgetMonth}-${key}`,
-          id: null,
+          rowId: `budget-${direction}-${category.toLowerCase()}`,
+          defaultBudgetId: null,
+          monthBudgetId: null,
           category,
-          enabled: true,
+          direction,
           amount: '',
-          mode: 'limit',
+          mode: direction === 'income' ? 'goal' : 'limit',
           notes: '',
         },
-      ].sort((left, right) => left.category.localeCompare(right.category));
+      ].sort((left, right) => {
+        if (left.direction !== right.direction) return left.direction === 'income' ? -1 : 1;
+        return left.category.localeCompare(right.category);
+      });
     });
     setBudgetPlannerCategory('');
   }
@@ -1417,18 +1502,20 @@ export default function App() {
   async function saveBudgetPlanner() {
     setBusy(true);
     try {
+      const scope = budgetSaveScope === 'month' ? 'month' : 'default';
       const payload = budgetPlannerRows.map((row) => ({
-        id: row.id,
-        month: budgetMonth,
+        id: scope === 'month' ? row.monthBudgetId : row.defaultBudgetId,
+        scope,
+        month: scope === 'month' ? budgetMonth : null,
         category: row.category,
-        direction: 'expense',
+        direction: row.direction,
         mode: row.mode,
-        amount: Number(row.amount || 0),
+        amount: parseCurrencyInput(row.amount),
         notes: row.notes,
-        enabled: row.enabled,
+        enabled: parseCurrencyInput(row.amount) > 0,
       }));
       const response = await budgetApi.saveBudgetPlanner(payload);
-      setSuccess(`Budget planner saved. ${response.summary.created} created, ${response.summary.updated} updated, ${response.summary.deleted} removed.`);
+      setSuccess(`Budget planner saved as ${scope === 'month' ? 'this month only' : 'ongoing defaults'}. ${response.summary.created} created, ${response.summary.updated} updated, ${response.summary.deleted} removed.`);
       await loadWorkspace();
     } catch (error) {
       setFailure(error);
@@ -1867,8 +1954,9 @@ export default function App() {
             <MetricCard
               label="Low Balance Alerts"
               value={String(projection.warnings.length)}
-              meta={projection.warnings.length ? 'Accounts needing cash attention in range' : 'No low-balance warnings in range'}
+              meta={projection.warnings.length ? 'Click to review current/future alerts' : 'No current/future low-balance warnings'}
               tone={projection.warnings.length ? 'rose' : 'cool'}
+              onClick={() => setShowOverviewWarnings((current) => !current)}
             />
             <MetricCard
               label="Budget Warnings"
@@ -1946,21 +2034,23 @@ export default function App() {
             </div>
           </SectionCard>
 
-          <SectionCard title="Warnings and upcoming pressure" kicker="Overdraft prevention">
-            {projection.warnings.length ? (
-              <div className="warning-list">
-                {projection.warnings.map((warning) => (
-                  <div key={`${warning.accountId}-${warning.minBalanceDate}`} className={`warning-item ${warning.severity}`}>
-                    <strong>{warning.accountName}</strong>
-                    <span>{warning.severity === 'below-floor' ? 'Drops below the account floor' : 'Gets close to empty'}</span>
-                    <span>{formatCurrency(warning.minBalance)} on {formatDateLabel(warning.minBalanceDate)}</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">No overdraft or low-cash warnings in the selected window.</div>
-            )}
-          </SectionCard>
+          {showOverviewWarnings ? (
+            <SectionCard title="Warnings and upcoming pressure" kicker="Overdraft prevention">
+              {projection.warnings.length ? (
+                <div className="warning-list">
+                  {projection.warnings.map((warning) => (
+                    <div key={`${warning.accountId}-${warning.minBalanceDate}`} className={`warning-item ${warning.severity}`}>
+                      <strong>{warning.accountName}</strong>
+                      <span>{warning.severity === 'below-floor' ? 'Drops below the account floor' : 'Gets close to empty'}</span>
+                      <span>{formatCurrency(warning.minBalance)} on {formatDateLabel(warning.minBalanceDate)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">No current or future overdraft warnings in the selected window.</div>
+              )}
+            </SectionCard>
+          ) : null}
         </div>
       ) : null}
 
@@ -2061,10 +2151,10 @@ export default function App() {
                   </Field>
                 ) : null}
                 <Field label="Category">
-                  <input
-                    list="category-suggestions"
+                  <CategoryPicker
                     value={transactionDraft.category}
-                    onChange={(event) => setTransactionDraft((current) => ({ ...current, category: event.target.value }))}
+                    onChange={(category) => setTransactionDraft((current) => ({ ...current, category }))}
+                    options={categoryOptions}
                   />
                 </Field>
                 <Field label="Notes" hint="Optional context like statement memo or why it differs from budget.">
@@ -2209,10 +2299,10 @@ export default function App() {
                             )}
                           </td>
                           <td>
-                            <input
-                              list="category-suggestions"
+                            <CategoryPicker
                               value={row.category}
-                              onChange={(event) => updateBatchTransactionRow(row.rowId, { category: event.target.value })}
+                              onChange={(category) => updateBatchTransactionRow(row.rowId, { category })}
+                              options={categoryOptions}
                               placeholder="Category"
                             />
                           </td>
@@ -2440,10 +2530,10 @@ export default function App() {
                 </Field>
               ) : null}
               <Field label="Category">
-                <input
-                  list="category-suggestions"
+                <CategoryPicker
                   value={ruleDraft.category}
-                  onChange={(event) => setRuleDraft((current) => ({ ...current, category: event.target.value }))}
+                  onChange={(category) => setRuleDraft((current) => ({ ...current, category }))}
+                  options={categoryOptions}
                 />
               </Field>
               <Field label="Every">
@@ -2664,10 +2754,10 @@ export default function App() {
                       </select>
                     </Field>
                     <Field label="Category">
-                      <input
-                        list="category-suggestions"
+                      <CategoryPicker
                         value={overrideDraft.category}
-                        onChange={(event) => setOverrideDraft((current) => ({ ...current, category: event.target.value }))}
+                        onChange={(category) => setOverrideDraft((current) => ({ ...current, category }))}
+                        options={categoryOptions}
                       />
                     </Field>
                     <Field label="Notes">
@@ -2958,8 +3048,8 @@ export default function App() {
       {activeView === 'budgets' ? (
         <div className="content-grid">
           <SectionCard
-            title="Monthly budget planner"
-            kicker="Edit category limits for the month in one pass"
+            title="Budget planner"
+            kicker="Ongoing monthly budget with month-specific review"
             actions={(
               <div className="form-actions">
                 <input
@@ -2969,113 +3059,176 @@ export default function App() {
                     setBudgetMonth(event.target.value);
                   }}
                 />
-                <button type="button" className="soft-button" onClick={() => setBudgetPlannerRows(buildBudgetPlannerRows({ categories: categoryOptions, budgets: data.budgets, month: budgetMonth }))}>
-                  Reset month
+                <select value={budgetSaveScope} onChange={(event) => setBudgetSaveScope(event.target.value)}>
+                  <option value="default">Save ongoing</option>
+                  <option value="month">Save this month only</option>
+                </select>
+                <button type="button" className="soft-button" onClick={() => setBudgetPlannerRows(buildBudgetPlannerRows({ summaries: budgetInsights.summaries }))}>
+                  Reset edits
                 </button>
                 <button type="button" className="primary-button" disabled={busy} onClick={saveBudgetPlanner}>
-                  Save planner
+                  Save budget
                 </button>
               </div>
             )}
           >
-            <div className="metric-grid compact">
-              <MetricCard label="Budgeted" value={formatCurrency(budgetInsights.totals.budgeted)} meta={formatMonthLabel(`${budgetMonth}-01`)} tone="cool" />
-              <MetricCard label="Actual spent" value={formatCurrency(budgetInsights.totals.actual)} meta="Posted actual + cleared activity" tone="teal" />
-              <MetricCard label="Projected total" value={formatCurrency(budgetInsights.totals.projected)} meta="Including future projected items" tone="sand" />
-              <MetricCard label="Warnings" value={String(budgetInsights.totals.warnings)} meta={budgetInsights.totals.warnings ? 'Lines projected over limit' : 'No monthly overages projected'} tone={budgetInsights.totals.warnings ? 'rose' : 'cool'} />
+            <div className="metric-grid compact budget-metric-grid">
+              <SplitMetricCard
+                label="Income"
+                leftLabel="Budgeted"
+                leftValue={formatCurrency(budgetInsights.totals.budgetedIncome)}
+                rightLabel="Projected"
+                rightValue={formatCurrency(budgetInsights.totals.projectedIncome)}
+                meta={formatMonthLabel(`${budgetMonth}-01`)}
+                tone="cool"
+              />
+              <SplitMetricCard
+                label="Expenses"
+                leftLabel="Budgeted"
+                leftValue={formatCurrency(budgetInsights.totals.budgetedExpenses)}
+                rightLabel="Projected"
+                rightValue={formatCurrency(budgetInsights.totals.projectedExpenses)}
+                meta="Transfers ignored"
+                tone="sand"
+              />
+              <SplitMetricCard
+                label="Remaining Money"
+                leftLabel="Budgeted"
+                leftValue={formatCurrency(budgetInsights.totals.budgetedRemaining)}
+                rightLabel="Projected"
+                rightValue={formatCurrency(budgetInsights.totals.projectedRemaining)}
+                meta={`Actual remaining ${formatCurrency(budgetInsights.totals.actualRemaining)}`}
+                tone={budgetInsights.totals.projectedRemaining < 0 ? 'rose' : 'teal'}
+              />
+              <SplitMetricCard
+                label="Actuals Posted"
+                leftLabel="Income"
+                leftValue={formatCurrency(budgetInsights.totals.actualIncome)}
+                rightLabel="Expenses"
+                rightValue={formatCurrency(budgetInsights.totals.actualExpenses)}
+                meta="Actual + cleared only"
+                tone={budgetInsights.totals.actualRemaining < 0 ? 'rose' : 'teal'}
+              />
+              <SplitMetricCard
+                label="Review"
+                leftLabel="Warnings"
+                leftValue={String(budgetInsights.totals.warnings)}
+                rightLabel="Unbudgeted"
+                rightValue={formatCurrency(budgetInsights.totals.unbudgetedExpenses)}
+                meta={budgetInsights.totals.warnings ? 'Click to review budget warnings' : 'No projected budget issues'}
+                tone={budgetInsights.totals.warnings || budgetInsights.totals.unbudgetedExpenses ? 'rose' : 'cool'}
+                onClick={() => setShowBudgetWarnings((current) => !current)}
+              />
             </div>
             <div className="inline-note">
-              Budget rows are tied to the same category names used by transactions and recurring rules. Set a monthly amount for the categories you care about, then save the whole month at once.
+              Rows appear automatically from income and expense categories used in this month plus saved ongoing budgets. Save ongoing to update future months, or save this month only to create an override for {formatMonthLabel(`${budgetMonth}-01`)}.
             </div>
             <div className="planner-add-row">
-              <input
-                list="category-suggestions"
+              <select value={budgetPlannerDirection} onChange={(event) => setBudgetPlannerDirection(event.target.value)}>
+                <option value="expense">Expense</option>
+                <option value="income">Income</option>
+              </select>
+              <CategoryPicker
                 value={budgetPlannerCategory}
-                onChange={(event) => setBudgetPlannerCategory(event.target.value)}
-                placeholder="Add another category to this month"
+                onChange={setBudgetPlannerCategory}
+                options={categoryOptions}
+                placeholder="Add a planned category with no activity yet"
               />
               <button type="button" className="soft-button" onClick={addBudgetPlannerCategory}>
-                Add category
+                Add planned category
               </button>
             </div>
-            {budgetInsights.warnings.length ? (
-              <div className="warning-list">
-                {budgetInsights.warnings.map((warning) => (
-                  <div key={warning.id} className="warning-item overdraft">
-                    <strong>{warning.category}</strong>
-                    <span>{formatCurrency(warning.totalProjected)} projected against {formatCurrency(warning.amount)}</span>
-                    <span>{describeBudgetStatus(warning)}</span>
-                  </div>
-                ))}
-              </div>
+            {showBudgetWarnings ? (
+              budgetInsights.warnings.length ? (
+                <div className="warning-list">
+                  {budgetInsights.warnings.map((warning) => (
+                    <div key={`${warning.direction}-${warning.category}`} className="warning-item overdraft">
+                      <strong>{warning.direction === 'income' ? 'Income' : 'Expense'}: {warning.category}</strong>
+                      <span>{formatCurrency(warning.totalProjected)} projected against {formatCurrency(warning.amount)}</span>
+                      <span>{describeBudgetStatus(warning)}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-state">No budget warnings for this month.</div>
+              )
             ) : null}
             <div className="table-wrap">
-              <table className="data-table">
+              <table className="data-table budget-table">
                 <thead>
                   <tr>
-                    <th>Use</th>
+                    <th>Type</th>
                     <th>Category</th>
-                    <th>Mode</th>
                     <th>Budget</th>
                     <th>Actual</th>
-                    <th>Projected</th>
-                    <th>Remaining</th>
+                    <th>Projected Total</th>
+                    <th>Variance</th>
                     <th>Status</th>
+                    <th>Source</th>
                     <th>Notes</th>
                   </tr>
                 </thead>
                 <tbody>
                   {budgetPlannerRows.map((row) => {
-                    const summary = budgetInsights.summaries.find((item) => item.category.trim().toLowerCase() === row.category.trim().toLowerCase());
-                    const amountValue = Number(row.amount || 0);
-                    const enabled = row.enabled || amountValue > 0;
+                    const summary = budgetInsights.summaries.find((item) => (
+                      item.direction === row.direction
+                      && item.category.trim().toLowerCase() === row.category.trim().toLowerCase()
+                    ));
+                    const amountValue = parseCurrencyInput(row.amount);
                     const remaining = summary ? summary.remaining : amountValue;
                     const statusLabel = summary
                       ? summary.status
-                      : enabled && amountValue > 0
+                      : amountValue > 0
                         ? 'planned'
-                        : 'inactive';
+                        : 'no-activity';
+                    const sourceLabel = summary?.scope === 'month'
+                      ? 'Month override'
+                      : summary?.scope === 'default'
+                        ? 'Ongoing'
+                        : 'Activity';
                     return (
                       <tr key={row.rowId}>
                         <td>
-                          <input
-                            type="checkbox"
-                            checked={enabled}
-                            onChange={(event) => updateBudgetPlannerRow(row.rowId, { enabled: event.target.checked })}
-                          />
+                          <span className={row.direction === 'income' ? 'pill income' : 'pill danger'}>{row.direction}</span>
                         </td>
-                        <td>{row.category}</td>
-                      <td>
-                        <select
-                          value={row.mode}
-                          onChange={(event) => updateBudgetPlannerRow(row.rowId, { mode: event.target.value })}
-                        >
-                          {lookups.budgetModes.map((mode) => (
-                            <option key={mode} value={mode.toLowerCase()}>{mode}</option>
-                          ))}
-                        </select>
-                      </td>
+                        <td>
+                          <div className="budget-category-cell">
+                            <strong>{row.category}</strong>
+                            <select
+                              value={row.mode}
+                              onChange={(event) => updateBudgetPlannerRow(row.rowId, { mode: event.target.value })}
+                            >
+                              {lookups.budgetModes.map((mode) => (
+                                <option key={mode} value={mode.toLowerCase()}>{mode}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </td>
                       <td>
                         <input
-                          type="number"
-                          step="0.01"
-                          min="0"
+                          className="budget-amount-input"
+                          type="text"
+                          inputMode="decimal"
                           value={row.amount}
+                          onFocus={(event) => event.target.select()}
                           onChange={(event) => updateBudgetPlannerRow(row.rowId, {
                             amount: event.target.value,
-                            enabled: event.target.value !== '' ? true : row.enabled,
                           })}
-                          placeholder="0.00"
+                          onBlur={() => updateBudgetPlannerRow(row.rowId, {
+                            amount: formatCurrencyInput(row.amount),
+                          })}
+                          placeholder="$0.00"
                         />
                       </td>
                       <td>{formatCurrency(summary?.actual ?? 0)}</td>
                       <td>{formatCurrency(summary?.totalProjected ?? 0)}</td>
-                      <td>{enabled ? formatCurrency(remaining) : '—'}</td>
+                      <td>{amountValue > 0 || summary ? formatCurrency(remaining) : '—'}</td>
                       <td>
-                        <span className={`pill ${summary?.overBudget ? 'danger' : summary?.goalMet ? 'success' : enabled ? 'muted' : ''}`}>
+                        <span className={budgetStatusClassName(summary)}>
                           {statusLabel}
                         </span>
                       </td>
+                      <td>{sourceLabel}</td>
                       <td>
                         <input
                           value={row.notes}
@@ -3089,7 +3242,7 @@ export default function App() {
                 </tbody>
               </table>
               {!budgetPlannerRows.length ? (
-                <div className="empty-state">No budget categories are available yet.</div>
+                <div className="empty-state">No budget activity or saved budget lines are available for this month yet.</div>
               ) : null}
             </div>
           </SectionCard>
@@ -3523,11 +3676,6 @@ export default function App() {
         </div>
       ) : null}
 
-      <datalist id="category-suggestions">
-        {categoryOptions.map((category) => (
-          <option key={category} value={category} />
-        ))}
-      </datalist>
     </div>
   );
 }

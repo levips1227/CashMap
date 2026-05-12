@@ -469,12 +469,32 @@ export function buildProjection({
   totals.actualExpenses = roundMoney(totals.actualExpenses);
   totals.actualIncome = roundMoney(totals.actualIncome);
 
+  const warningStartDate = compareDayKeys(getTodayKey(), startDate) > 0 ? getTodayKey() : startDate;
+  const futureMinBalanceByAccount = {};
+  if (compareDayKeys(warningStartDate, endDate) <= 0) {
+    for (const point of chartSeries) {
+      if (compareDayKeys(point.date, warningStartDate) < 0) continue;
+      for (const account of cashAccounts) {
+        const balance = point.balances[account.id] || 0;
+        const existing = futureMinBalanceByAccount[account.id];
+        if (!existing || balance < existing.amount) {
+          futureMinBalanceByAccount[account.id] = { amount: balance, date: point.date };
+        }
+      }
+    }
+  }
+
   const accountSummaries = cashAccounts.map((account) => {
     const startBalance = rangeStartSnapshot.balances[account.id] || 0;
     const endBalance = chartSeries.length ? chartSeries[chartSeries.length - 1].balances[account.id] || 0 : startBalance;
     const minBalance = minBalanceByAccount[account.id] || { amount: startBalance, date: startDate };
+    const futureMinBalance = futureMinBalanceByAccount[account.id] || null;
     const minimumBalance = toNumber(account.minimumBalance, 0);
     const warningBalanceForAccount = toNumber(account.warningBalance, warningThreshold);
+    const futureNeedsAttention = futureMinBalance ? futureMinBalance.amount < minimumBalance : false;
+    const futureLowCash = futureMinBalance
+      ? futureMinBalance.amount >= minimumBalance && futureMinBalance.amount < warningBalanceForAccount
+      : false;
     return {
       ...account,
       startBalance: roundMoney(startBalance),
@@ -482,8 +502,10 @@ export function buildProjection({
       delta: roundMoney(endBalance - startBalance),
       minBalance: roundMoney(minBalance.amount),
       minBalanceDate: minBalance.date,
-      needsAttention: minBalance.amount < minimumBalance,
-      lowCash: minBalance.amount >= minimumBalance && minBalance.amount < warningBalanceForAccount,
+      warningMinBalance: futureMinBalance ? roundMoney(futureMinBalance.amount) : null,
+      warningMinBalanceDate: futureMinBalance?.date || null,
+      needsAttention: futureNeedsAttention,
+      lowCash: futureLowCash,
       warningBalance: warningBalanceForAccount,
       minimumBalance,
     };
@@ -495,8 +517,8 @@ export function buildProjection({
     .map((account) => ({
       accountId: account.id,
       accountName: account.name,
-      minBalance: account.minBalance,
-      minBalanceDate: account.minBalanceDate,
+      minBalance: account.warningMinBalance,
+      minBalanceDate: account.warningMinBalanceDate,
       severity: account.needsAttention ? 'below-floor' : 'low-cash',
       minimumBalance: account.minimumBalance,
       warningBalance: account.warningBalance,
@@ -515,62 +537,156 @@ export function buildProjection({
 }
 
 export function buildBudgetInsights({ budgets, entries, monthKey }) {
-  const monthlyBudgets = budgets.filter((budget) => budget.month === monthKey);
+  const normalizeCategoryKey = (value) => String(value || 'Uncategorized').trim().toLowerCase() || 'uncategorized';
+  const normalizeCategory = (value) => String(value || 'Uncategorized').trim() || 'Uncategorized';
+  const getBudgetScope = (budget) => budget.scope || 'default';
+  const isDefaultBudget = (budget) => getBudgetScope(budget) === 'default';
+  const isMonthBudget = (budget) => getBudgetScope(budget) === 'month' && budget.month === monthKey;
+  const bucketKeyFor = (direction, category) => `${direction}|${normalizeCategoryKey(category)}`;
   const relevantEntries = entries.filter((entry) => (
     entry.date.startsWith(monthKey)
-    && entry.direction !== 'opening'
-    && entry.category
+    && (entry.direction === 'income' || entry.direction === 'expense')
   ));
 
   const totalsByBucket = new Map();
   relevantEntries.forEach((entry) => {
-    const bucketKey = `${entry.direction}|${String(entry.category || '').trim().toLowerCase()}`;
+    const bucketKey = bucketKeyFor(entry.direction, entry.category);
     const existing = totalsByBucket.get(bucketKey) || {
       actual: 0,
-      projected: 0,
-      total: 0,
-      category: entry.category,
+      projectedOnly: 0,
+      totalProjected: 0,
+      category: normalizeCategory(entry.category),
       direction: entry.direction,
     };
     if (entry.status === 'projected') {
-      existing.projected = roundMoney(existing.projected + entry.amount);
+      existing.projectedOnly = roundMoney(existing.projectedOnly + entry.amount);
     } else {
       existing.actual = roundMoney(existing.actual + entry.amount);
     }
-    existing.total = roundMoney(existing.total + entry.amount);
+    existing.totalProjected = roundMoney(existing.totalProjected + entry.amount);
     totalsByBucket.set(bucketKey, existing);
   });
 
-  const summaries = monthlyBudgets.map((budget) => {
-    const bucketKey = `${budget.direction}|${budget.category.trim().toLowerCase()}`;
-    const totals = totalsByBucket.get(bucketKey) || { actual: 0, projected: 0, total: 0 };
-    const limitRemaining = roundMoney(budget.amount - totals.total);
-    const goalRemaining = roundMoney(Math.max(0, budget.amount - totals.total));
-    const isLimit = budget.mode === 'limit';
-    const isExpense = budget.direction === 'expense';
-    const overBudget = isLimit && isExpense && totals.total > budget.amount;
-    const goalMet = !isLimit && totals.total >= budget.amount;
-    const progressPercent = budget.amount > 0 ? Math.min(999, roundMoney((totals.total / budget.amount) * 100)) : 0;
-    return {
-      ...budget,
-      actual: totals.actual,
-      projectedOnly: totals.projected,
-      totalProjected: totals.total,
-      remaining: isLimit ? limitRemaining : goalRemaining,
-      overBudget,
-      goalMet,
-      progressPercent,
-      status: overBudget ? 'over' : goalMet ? 'met' : isLimit ? 'on-track' : 'in-progress',
-    };
+  const inferBudgetDirection = (budget) => {
+    const categoryKey = normalizeCategoryKey(budget.category);
+    const incomeKey = bucketKeyFor('income', categoryKey);
+    const expenseKey = bucketKeyFor('expense', categoryKey);
+    if (budget.direction === 'income') return 'income';
+    if (budget.direction === 'expense' && totalsByBucket.has(incomeKey) && !totalsByBucket.has(expenseKey)) {
+      return 'income';
+    }
+    if (budget.direction === 'expense' && /\b(payroll|salary|wages|interest income|income)\b/i.test(budget.category || '')) {
+      return 'income';
+    }
+    return 'expense';
+  };
+
+  const defaultBudgetMap = new Map();
+  const monthBudgetMap = new Map();
+  budgets.forEach((budget) => {
+    if (budget.direction !== 'income' && budget.direction !== 'expense') return;
+    const direction = inferBudgetDirection(budget);
+    const normalizedBudget = { ...budget, direction };
+    const key = bucketKeyFor(direction, budget.category);
+    if (isDefaultBudget(budget)) {
+      defaultBudgetMap.set(key, normalizedBudget);
+    } else if (isMonthBudget(budget)) {
+      monthBudgetMap.set(key, normalizedBudget);
+    }
   });
 
-  const warnings = summaries.filter((summary) => summary.overBudget);
+  const bucketKeys = new Set([
+    ...totalsByBucket.keys(),
+    ...defaultBudgetMap.keys(),
+    ...monthBudgetMap.keys(),
+  ]);
+
+  const summaries = [...bucketKeys].map((bucketKey) => {
+    const [direction] = bucketKey.split('|');
+    const totals = totalsByBucket.get(bucketKey) || {
+      actual: 0,
+      projectedOnly: 0,
+      totalProjected: 0,
+      category: '',
+      direction,
+    };
+    const defaultBudget = defaultBudgetMap.get(bucketKey) || null;
+    const monthBudget = monthBudgetMap.get(bucketKey) || null;
+    const effectiveBudget = monthBudget || defaultBudget;
+    const category = normalizeCategory(effectiveBudget?.category || totals.category);
+    const amount = roundMoney(toNumber(effectiveBudget?.amount, 0));
+    const mode = effectiveBudget?.mode || (direction === 'income' ? 'goal' : 'limit');
+    const hasBudget = !!effectiveBudget && amount > 0;
+    const isExpense = direction === 'expense';
+    const variance = isExpense
+      ? roundMoney(amount - totals.totalProjected)
+      : roundMoney(totals.totalProjected - amount);
+    const actualVariance = isExpense
+      ? roundMoney(amount - totals.actual)
+      : roundMoney(totals.actual - amount);
+    const overBudget = hasBudget && isExpense && totals.totalProjected > amount;
+    const incomeShort = hasBudget && !isExpense && totals.totalProjected < amount;
+    const goalMet = hasBudget && !isExpense && totals.totalProjected >= amount;
+    const unbudgeted = !hasBudget && totals.totalProjected > 0;
+    const progressPercent = amount > 0 ? Math.min(999, roundMoney((totals.totalProjected / amount) * 100)) : 0;
+    const status = overBudget
+      ? 'over'
+      : incomeShort
+        ? 'short'
+        : goalMet
+          ? 'met'
+          : unbudgeted
+            ? 'unbudgeted'
+            : hasBudget
+              ? 'on-track'
+              : 'no-activity';
+    return {
+      id: effectiveBudget?.id ?? null,
+      defaultBudgetId: defaultBudget?.id ?? null,
+      monthBudgetId: monthBudget?.id ?? null,
+      scope: monthBudget ? 'month' : defaultBudget ? 'default' : 'activity',
+      month: monthKey,
+      category,
+      direction,
+      mode,
+      amount,
+      notes: effectiveBudget?.notes || '',
+      actual: totals.actual,
+      projectedOnly: totals.projectedOnly,
+      totalProjected: totals.totalProjected,
+      remaining: variance,
+      actualRemaining: actualVariance,
+      hasBudget,
+      overBudget,
+      incomeShort,
+      goalMet,
+      unbudgeted,
+      progressPercent,
+      status,
+    };
+  }).sort((left, right) => {
+    if (left.direction !== right.direction) return left.direction === 'income' ? -1 : 1;
+    return left.category.localeCompare(right.category);
+  });
+
+  const warnings = summaries.filter((summary) => summary.overBudget || summary.incomeShort);
+  const incomeSummaries = summaries.filter((summary) => summary.direction === 'income');
+  const expenseSummaries = summaries.filter((summary) => summary.direction === 'expense');
   const totals = {
-    budgeted: roundMoney(monthlyBudgets.reduce((sum, budget) => sum + budget.amount, 0)),
-    actual: roundMoney(summaries.reduce((sum, summary) => sum + summary.actual, 0)),
-    projected: roundMoney(summaries.reduce((sum, summary) => sum + summary.totalProjected, 0)),
+    budgetedIncome: roundMoney(incomeSummaries.reduce((sum, summary) => sum + (summary.hasBudget ? summary.amount : 0), 0)),
+    budgetedExpenses: roundMoney(expenseSummaries.reduce((sum, summary) => sum + (summary.hasBudget ? summary.amount : 0), 0)),
+    actualIncome: roundMoney(incomeSummaries.reduce((sum, summary) => sum + summary.actual, 0)),
+    actualExpenses: roundMoney(expenseSummaries.reduce((sum, summary) => sum + summary.actual, 0)),
+    projectedIncome: roundMoney(incomeSummaries.reduce((sum, summary) => sum + summary.totalProjected, 0)),
+    projectedExpenses: roundMoney(expenseSummaries.reduce((sum, summary) => sum + summary.totalProjected, 0)),
     warnings: warnings.length,
+    unbudgetedExpenses: roundMoney(expenseSummaries.reduce((sum, summary) => (
+      sum + (summary.unbudgeted ? summary.totalProjected : 0)
+    ), 0)),
   };
+  totals.budgetedRemaining = roundMoney(totals.budgetedIncome - totals.budgetedExpenses);
+  totals.actualRemaining = roundMoney(totals.actualIncome - totals.actualExpenses);
+  totals.projectedRemaining = roundMoney(totals.projectedIncome - totals.projectedExpenses);
 
   return {
     summaries,

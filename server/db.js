@@ -391,7 +391,9 @@ export function deleteRecurringOverride(db, id) {
 export function listBudgets(db) {
   return sortBy(
     requireCollection(db, 'budgets'),
-    (budget) => budget.month,
+    (budget) => (budget.scope === 'month' ? 1 : 0),
+    (budget) => budget.month || '',
+    (budget) => budget.direction || '',
     (budget) => budget.category.toLowerCase(),
     (budget) => budget.id,
   ).map(clone);
