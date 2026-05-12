@@ -75,6 +75,9 @@ const FALLBACK_JWT_SECRET = JWT_SECRET || 'dev-insecure-change-me';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PASSWORD_MIN_LENGTH = 8;
 const RESET_ADMIN_ON_START = process.env.RESET_ADMIN_ON_START === 'true';
+const COOKIE_SECURE = process.env.COOKIE_SECURE === undefined
+  ? NODE_ENV === 'production'
+  : process.env.COOKIE_SECURE === 'true';
 
 const app = express();
 app.set('trust proxy', process.env.TRUST_PROXY === 'true');
@@ -289,7 +292,7 @@ function setSessionCookie(res, user) {
   res.cookie('session', token, {
     httpOnly: true,
     sameSite: 'lax',
-    secure: NODE_ENV === 'production',
+    secure: COOKIE_SECURE,
     maxAge: 7 * 24 * 60 * 60 * 1000,
   });
 }
@@ -298,7 +301,7 @@ function clearSessionCookie(res) {
   res.clearCookie('session', {
     httpOnly: true,
     sameSite: 'lax',
-    secure: NODE_ENV === 'production',
+    secure: COOKIE_SECURE,
   });
 }
 
