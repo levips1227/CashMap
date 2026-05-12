@@ -154,7 +154,7 @@ code {
     rgba(255, 255, 255, 0.66);
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 30px;
-  padding: 1.6rem 1.8rem;
+  padding: 1rem 1.2rem;
   box-shadow: var(--shadow);
 }
 
@@ -163,20 +163,20 @@ code {
 }
 
 .hero h1 {
-  font-size: clamp(2.4rem, 4vw, 4rem);
-  line-height: 0.98;
+  font-size: clamp(2.4rem, 6vw, 4rem);
+  line-height: .98;
   letter-spacing: -0.05em;
 }
 
 .hero p {
   color: var(--ink-2);
-  margin-top: 0.75rem;
-  max-width: 52rem;
+  margin-top: .75rem;
+  max-width: 54rem;
 }
 
 .hero-actions {
   display: grid;
-  gap: 0.9rem;
+  gap: .9rem;
   justify-items: end;
 }
 
@@ -369,7 +369,8 @@ code {
 
 .metric-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
 }
 
 .metric-card {
@@ -433,7 +434,7 @@ code {
 
 .account-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
 }
 
 .account-card,
@@ -851,11 +852,11 @@ code {
 }
 
 .metric-grid.compact {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .budget-metric-grid {
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .budget-metric-grid .metric-card {
@@ -1226,7 +1227,6 @@ code {
 }
 
 @media (max-width: 1100px) {
-  .metric-grid,
   .filters-grid,
   .content-grid.split {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1249,7 +1249,6 @@ code {
     align-items: stretch;
   }
 
-  .metric-grid,
   .filters-grid,
   .content-grid.split {
     grid-template-columns: 1fr;

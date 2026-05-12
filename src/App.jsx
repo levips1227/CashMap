@@ -38,7 +38,7 @@ const VIEW_OPTIONS = [
   { id: 'reconcile', label: 'Reconcile' },
 ];
 
-const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MIN_LENGTH = 4;
 const USER_ROLES = ['Admin', 'Standard User'];
 
 const DEFAULT_LOOKUPS = {
@@ -60,6 +60,7 @@ const DEFAULT_LOOKUPS = {
     'Fuel',
     'Transfer',
     'Debt Payment',
+    'Credit Card',
     'Savings',
     'Subscription',
     'Medical',
@@ -713,10 +714,11 @@ function LoginView({ busy, error, onSubmit }) {
   return (
     <main className="auth-shell">
       <section className="auth-panel">
-        <div className="kicker">Budget Projection</div>
-        <h1>Forecast cash across accounts before the month happens.</h1>
+         <img src="/faviconNB.png" alt="CashMap Logo" className="w-128 h-128 mx-auto" />
+        {/* <div className="kicker">CashMap</div> */}
+        {/* <h1>Forecast cash across accounts before the month happens.</h1> */}
         <p className="auth-copy">
-          Track each account balance, generate recurring expenses forward, and plan transfers before anything overdrafts.
+          {/* Track each account balance, generate recurring expenses forward, and plan transfers before anything overdrafts. */}
         </p>
         <form
           className="auth-form"
@@ -741,9 +743,9 @@ function LoginView({ busy, error, onSubmit }) {
             {busy ? 'Signing in…' : 'Open budget workspace'}
           </button>
         </form>
-        <div className="dev-note">
+        {/* <div className="dev-note">
           Local default: <code>Admin</code> / <code>change-me-please</code>
-        </div>
+        </div> */}
       </section>
     </main>
   );
@@ -1807,12 +1809,15 @@ export default function App() {
   return (
     <div className="app-shell">
       <header className="hero">
-        <div className="hero-copy">
-          <div className="kicker">Cash flow operating panel</div>
-          <h1>Budget Projection</h1>
-          <p>
-            A running cash forecast across every account, with recurring rules, date-range projection, and override control for one-off changes.
-          </p>
+        <div className="hero-copy flex items-center gap-0">
+          <img src="/favicon2NB.png" alt="CashMap Logo" className="w-32 h-32 mr-4 self-start flex-shrink-0" />
+          <div>
+            <div className="kicker">Cash flow operating panel</div>
+            <h1>CashMap</h1>
+            <p>
+              Map Your Money. Build Your Future.
+            </p>
+          </div>
         </div>
         <div className="hero-actions">
           <div className="user-chip">
@@ -3072,7 +3077,7 @@ export default function App() {
               </div>
             )}
           >
-            <div className="metric-grid compact budget-metric-grid">
+            <div className="metric-grid budget-metric-grid">
               <SplitMetricCard
                 label="Income"
                 leftLabel="Budgeted"
