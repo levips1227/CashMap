@@ -38,8 +38,15 @@ const VIEW_OPTIONS = [
   { id: 'reconcile', label: 'Reconcile' },
 ];
 
-const PASSWORD_MIN_LENGTH = 4;
+const PASSWORD_MIN_LENGTH = 8;
 const USER_ROLES = ['Admin', 'Standard User'];
+const HOUSEHOLD_ROLES = ['Owner', 'Member', 'Viewer'];
+const GENDER_OPTIONS = ['Male', 'Female', 'Nonbinary', 'Other', 'Prefer not to say'];
+const INCOME_BRACKETS = Array.from({ length: 10 }, (_, index) => {
+  const start = index * 20000;
+  const end = start + 19999;
+  return `$${start.toLocaleString()} - $${end.toLocaleString()}`;
+}).concat('$200,000+');
 
 const DEFAULT_LOOKUPS = {
   cashWarningThreshold: 150,
@@ -70,6 +77,31 @@ const DEFAULT_LOOKUPS = {
   ],
   accountColorPalette: ['#155eef', '#0891b2', '#0f766e', '#7c3aed', '#b45309', '#dc2626'],
 };
+
+function getInviteTokenFromUrl() {
+  if (typeof window === 'undefined') return '';
+  return new URLSearchParams(window.location.search).get('invite') || '';
+}
+
+function getDefaultProfileDraft(user = null) {
+  return {
+    firstName: user?.firstName || '',
+    lastName: user?.lastName || '',
+    phone: user?.phone || '',
+    gender: user?.gender || 'Prefer not to say',
+    annualHouseholdIncome: user?.annualHouseholdIncome || '',
+    currentPassword: '',
+    newPassword: '',
+    confirmPassword: '',
+  };
+}
+
+function clearInviteTokenFromUrl() {
+  if (typeof window === 'undefined') return;
+  const url = new URL(window.location.href);
+  url.searchParams.delete('invite');
+  window.history.replaceState({}, '', url.toString());
+}
 
 function getDefaultAccountDraft(lookups = DEFAULT_LOOKUPS) {
   return {
@@ -751,17 +783,178 @@ function LoginView({ busy, error, onSubmit }) {
   );
 }
 
+void LoginView;
+
+function AuthView({ busy, error, inviteInfo, onLogin, onSignup }) {
+  const [mode, setMode] = useState('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState('Prefer not to say');
+  const [annualHouseholdIncome, setAnnualHouseholdIncome] = useState('');
+
+  return (
+    <main className="auth-shell">
+      <section className="auth-panel">
+        <img src="/faviconNB.png" alt="CashMap Logo" className="w-128 h-128 mx-auto" />
+        <div className="entry-mode-toggle auth-toggle">
+          <button
+            type="button"
+            className={`soft-button${mode === 'login' ? ' active' : ''}`}
+            onClick={() => setMode('login')}
+          >
+            Log in
+          </button>
+          <button
+            type="button"
+            className={`soft-button${mode === 'signup' ? ' active' : ''}`}
+            onClick={() => setMode('signup')}
+          >
+            Sign up
+          </button>
+        </div>
+        <h1>{inviteInfo ? `Join ${inviteInfo.householdName}` : mode === 'signup' ? 'Create your CashMap account' : 'Open your CashMap workspace'}</h1>
+        <p className="auth-copy">
+          {inviteInfo
+            ? `This invite grants ${inviteInfo.role.toLowerCase()} access and expires ${formatDateLabel(inviteInfo.expiresAt.slice(0, 10))}.`
+            : 'Track each account balance, generate recurring expenses forward, and plan transfers before anything overdrafts.'}
+        </p>
+        <form
+          className="auth-form"
+          autoComplete="off"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (mode === 'signup') {
+              onSignup({
+                username,
+                password,
+                confirmPassword,
+                firstName,
+                lastName,
+                phone,
+                gender,
+                annualHouseholdIncome,
+              });
+              return;
+            }
+            onLogin({ username, password });
+          }}
+        >
+          <input
+            type="text"
+            name="cashmap-shadow-username"
+            autoComplete="username"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden-autofill-field"
+          />
+          <input
+            type="password"
+            name="cashmap-shadow-password"
+            autoComplete="current-password"
+            tabIndex={-1}
+            aria-hidden="true"
+            className="hidden-autofill-field"
+          />
+          <Field label="Username">
+            <input
+              name={mode === 'signup' ? 'signup-username' : 'login-username'}
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete={mode === 'signup' ? 'username' : 'off'}
+              required
+            />
+          </Field>
+          <Field label="Password">
+            <input
+              name={mode === 'signup' ? 'signup-password' : 'login-password'}
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete={mode === 'signup' ? 'new-password' : 'off'}
+              required
+            />
+          </Field>
+          {mode === 'signup' ? (
+            <>
+              <Field label="First name">
+                <input
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  autoComplete="given-name"
+                  required
+                />
+              </Field>
+              <Field label="Last name">
+                <input
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  autoComplete="family-name"
+                  required
+                />
+              </Field>
+              <Field label="Phone number">
+                <input value={phone} onChange={(event) => setPhone(event.target.value)} autoComplete="tel" />
+              </Field>
+              <Field label="Gender">
+                <select value={gender} onChange={(event) => setGender(event.target.value)} required>
+                  {GENDER_OPTIONS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Annual household income">
+                <select
+                  value={annualHouseholdIncome}
+                  onChange={(event) => setAnnualHouseholdIncome(event.target.value)}
+                  required
+                >
+                  <option value="">Select income range</option>
+                  {INCOME_BRACKETS.map((option) => (
+                    <option key={option} value={option}>{option}</option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Confirm password" hint={`Minimum ${PASSWORD_MIN_LENGTH} characters.`}>
+                <input
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  autoComplete="new-password"
+                />
+              </Field>
+            </>
+          ) : null}
+          {error ? <div className="inline-error">{error}</div> : null}
+          <button type="submit" className="primary-button" disabled={busy}>
+            {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Open budget workspace'}
+          </button>
+        </form>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState({ status: 'loading', user: null });
   const [data, setData] = useState({
     lookups: DEFAULT_LOOKUPS,
+    households: [],
+    activeHousehold: null,
     accounts: [],
     transactions: [],
     recurringRules: [],
     recurringOverrides: [],
     budgets: [],
     reconciliations: [],
+    loanPayments: [],
+    loanDraws: [],
   });
+  const [inviteToken, setInviteToken] = useState(getInviteTokenFromUrl);
+  const [inviteInfo, setInviteInfo] = useState(null);
   const [filters, setFilters] = useState(getInitialFilters);
   const [activeView, setActiveView] = useState('overview');
   const [accountDraft, setAccountDraft] = useState(getDefaultAccountDraft(DEFAULT_LOOKUPS));
@@ -791,9 +984,21 @@ export default function App() {
   const [settingsTab, setSettingsTab] = useState('profile');
   const [settingsBusy, setSettingsBusy] = useState(false);
   const [settingsMessage, setSettingsMessage] = useState({ type: '', message: '' });
-  const [profileDraft, setProfileDraft] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [profileDraft, setProfileDraft] = useState(getDefaultProfileDraft());
   const [adminSettingsDraft, setAdminSettingsDraft] = useState(settingsDraftFromLookups(DEFAULT_LOOKUPS));
   const [settingsUsers, setSettingsUsers] = useState([]);
+  const [householdDraft, setHouseholdDraft] = useState({ name: 'My Household' });
+  const [householdRenameDraft, setHouseholdRenameDraft] = useState('');
+  const [householdMembers, setHouseholdMembers] = useState([]);
+  const [householdInvites, setHouseholdInvites] = useState([]);
+  const [householdInviteRole, setHouseholdInviteRole] = useState('Member');
+  const [latestInviteLink, setLatestInviteLink] = useState('');
+  const [householdAssignmentDraft, setHouseholdAssignmentDraft] = useState({ userId: '', role: 'Member' });
+  const [adminHouseholds, setAdminHouseholds] = useState([]);
+  const [adminHouseholdSearch, setAdminHouseholdSearch] = useState('');
+  const [adminHouseholdSort, setAdminHouseholdSort] = useState({ key: 'lastActivityAt', direction: 'desc' });
+  const [adminSelectedHouseholdId, setAdminSelectedHouseholdId] = useState(null);
+  const [archiveConfirm, setArchiveConfirm] = useState({ open: false, checked: false, householdId: null, householdName: '' });
   const [userDraft, setUserDraft] = useState({ username: '', role: 'Standard User', password: '', confirmPassword: '' });
   const [editingUserId, setEditingUserId] = useState(null);
   const [resetPasswordDraft, setResetPasswordDraft] = useState({ userId: null, password: '', confirmPassword: '' });
@@ -802,10 +1007,40 @@ export default function App() {
 
   useEffect(() => {
     loadWorkspace();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const lookups = data.lookups || DEFAULT_LOOKUPS;
   const isAdmin = session.user?.role === 'Admin';
+  const activeHousehold = data.activeHousehold || null;
+  const settingsHouseholdId = settingsTab === 'admin-households' ? adminSelectedHouseholdId : activeHousehold?.id;
+  const canManageActiveHousehold = Boolean(activeHousehold?.canManage);
+  const hasActiveHousehold = Boolean(activeHousehold?.id);
+  const filteredAdminHouseholds = useMemo(() => {
+    const query = adminHouseholdSearch.trim().toLowerCase();
+    const filtered = query
+      ? adminHouseholds.filter((household) => (
+        [
+          household.name,
+          household.ownerUsername,
+          household.ownerFirstName,
+          household.ownerLastName,
+          household.status,
+        ].some((value) => String(value || '').toLowerCase().includes(query))
+      ))
+      : adminHouseholds;
+    return [...filtered].sort((left, right) => {
+      const leftValue = left[adminHouseholdSort.key] ?? '';
+      const rightValue = right[adminHouseholdSort.key] ?? '';
+      if (leftValue < rightValue) return adminHouseholdSort.direction === 'asc' ? -1 : 1;
+      if (leftValue > rightValue) return adminHouseholdSort.direction === 'asc' ? 1 : -1;
+      return left.id - right.id;
+    });
+  }, [adminHouseholds, adminHouseholdSearch, adminHouseholdSort]);
+  const adminSelectedHousehold = useMemo(
+    () => adminHouseholds.find((household) => household.id === adminSelectedHouseholdId) || null,
+    [adminHouseholds, adminSelectedHouseholdId],
+  );
   const activeAdminCount = settingsUsers.filter((user) => user.role === 'Admin' && !user.disabled).length;
   const cashAccounts = useMemo(
     () => data.accounts.filter((account) => (account.trackingType || 'cash') !== 'loan'),
@@ -948,33 +1183,99 @@ export default function App() {
     });
   }, [visibleLedgerSelectionKey]);
 
+  useEffect(() => {
+    if (!inviteToken) {
+      setInviteInfo(null);
+      return;
+    }
+    let cancelled = false;
+    budgetApi.getInvite(inviteToken)
+      .then((response) => {
+        if (cancelled) return;
+        setInviteInfo(response.invite || null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        setInviteInfo(null);
+        setBanner({ type: 'error', message: error.message || 'Invite link could not be loaded.' });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [inviteToken]);
+
+  function applyBootstrapPayload(payload) {
+    startTransition(() => {
+      setSession({ status: 'authenticated', user: payload.user });
+      setData({
+        lookups: payload.lookups,
+        households: payload.households || [],
+        activeHousehold: payload.activeHousehold || null,
+        accounts: payload.accounts,
+        transactions: payload.transactions,
+        recurringRules: payload.recurringRules,
+        recurringOverrides: payload.recurringOverrides,
+        budgets: payload.budgets,
+        reconciliations: payload.reconciliations,
+        loanPayments: payload.loanPayments || [],
+        loanDraws: payload.loanDraws || [],
+      });
+      setProfileDraft((current) => ({
+        ...getDefaultProfileDraft(payload.user),
+        currentPassword: current.currentPassword || '',
+        newPassword: current.newPassword || '',
+        confirmPassword: current.confirmPassword || '',
+      }));
+      setHouseholdRenameDraft(payload.activeHousehold?.name || '');
+      setAccountDraft(getDefaultAccountDraft(payload.lookups));
+      const payloadCashAccounts = payload.accounts.filter((account) => (account.trackingType || 'cash') !== 'loan' && account.isActive);
+      setTransactionDraft(getDefaultTransactionDraft(payloadCashAccounts));
+      setBatchTransactionRows(getDefaultBatchTransactionRows(payloadCashAccounts));
+      setRuleDraft(getDefaultRuleDraft(payloadCashAccounts));
+      setReconciliationDraft(getDefaultReconciliationDraft(payloadCashAccounts, payload.reconciliations));
+      setSelectedAccountId((current) => current ?? payloadCashAccounts[0]?.id ?? null);
+      setBanner({ type: '', message: '' });
+    });
+  }
+
+  async function refreshActiveHouseholdMembers(householdId = data.activeHousehold?.id) {
+    if (!householdId) {
+      setHouseholdMembers([]);
+      setHouseholdInvites([]);
+      setLatestInviteLink('');
+      return;
+    }
+    const response = await budgetApi.listHouseholdMembers(householdId);
+    setHouseholdMembers(response.members || []);
+    setHouseholdInvites(response.invites || []);
+    setHouseholdRenameDraft(response.household?.name || data.activeHousehold?.name || '');
+  }
+
+  function getTargetHouseholdId() {
+    return settingsHouseholdId || null;
+  }
+
   async function loadWorkspace() {
     setBusy(true);
     try {
       const payload = await budgetApi.bootstrap();
-      startTransition(() => {
-        setSession({ status: 'authenticated', user: payload.user });
-        setData({
-          lookups: payload.lookups,
-          accounts: payload.accounts,
-          transactions: payload.transactions,
-          recurringRules: payload.recurringRules,
-          recurringOverrides: payload.recurringOverrides,
-          budgets: payload.budgets,
-          reconciliations: payload.reconciliations,
-        });
-        setAccountDraft(getDefaultAccountDraft(payload.lookups));
-        const payloadCashAccounts = payload.accounts.filter((account) => (account.trackingType || 'cash') !== 'loan' && account.isActive);
-        setTransactionDraft(getDefaultTransactionDraft(payloadCashAccounts));
-        setBatchTransactionRows(getDefaultBatchTransactionRows(payloadCashAccounts));
-        setRuleDraft(getDefaultRuleDraft(payloadCashAccounts));
-        setReconciliationDraft(getDefaultReconciliationDraft(payloadCashAccounts, payload.reconciliations));
-        setSelectedAccountId((current) => current ?? payloadCashAccounts[0]?.id ?? null);
-        setBanner({ type: '', message: '' });
-      });
+      applyBootstrapPayload(payload);
     } catch (error) {
       if (error.status === 401) {
         setSession({ status: 'anonymous', user: null });
+        setData({
+          lookups: DEFAULT_LOOKUPS,
+          households: [],
+          activeHousehold: null,
+          accounts: [],
+          transactions: [],
+          recurringRules: [],
+          recurringOverrides: [],
+          budgets: [],
+          reconciliations: [],
+          loanPayments: [],
+          loanDraws: [],
+        });
         setBanner({ type: '', message: '' });
       } else {
         setBanner({ type: 'error', message: error.message });
@@ -989,6 +1290,9 @@ export default function App() {
     try {
       await budgetApi.login(credentials);
       await loadWorkspace();
+      if (inviteToken && inviteInfo) {
+        setBanner({ type: 'success', message: `Invite ready for ${inviteInfo.householdName}. Use Join Household to connect this account.` });
+      }
     } catch (error) {
       setBanner({ type: 'error', message: error.message });
     } finally {
@@ -996,13 +1300,96 @@ export default function App() {
     }
   }
 
+  async function handleSignup(credentials) {
+    if (
+      !credentials.username
+      || !credentials.password
+      || !credentials.confirmPassword
+      || !credentials.firstName
+      || !credentials.lastName
+      || !credentials.gender
+      || !credentials.annualHouseholdIncome
+    ) {
+      setBanner({ type: 'error', message: 'Username, name, income range, and password fields are required.' });
+      return;
+    }
+    if (credentials.password !== credentials.confirmPassword) {
+      setBanner({ type: 'error', message: 'Passwords do not match.' });
+      return;
+    }
+    if (credentials.password.length < PASSWORD_MIN_LENGTH) {
+      setBanner({ type: 'error', message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters.` });
+      return;
+    }
+    setBusy(true);
+    try {
+      await budgetApi.signup({
+        username: credentials.username,
+        password: credentials.password,
+        firstName: credentials.firstName,
+        lastName: credentials.lastName,
+        phone: credentials.phone,
+        gender: credentials.gender,
+        annualHouseholdIncome: credentials.annualHouseholdIncome,
+        inviteToken: inviteToken || undefined,
+      });
+      if (inviteToken) {
+        clearInviteTokenFromUrl();
+        setInviteToken('');
+        setInviteInfo(null);
+      }
+      await loadWorkspace();
+    } catch (error) {
+      setBanner({ type: 'error', message: error.message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  useEffect(() => {
+    if (!settingsOpen || settingsTab !== 'households') return;
+    refreshActiveHouseholdMembers().catch((error) => {
+      setSettingsNotice('error', error.message || 'Could not load household details.');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen, settingsTab, data.activeHousehold?.id]);
+
+  useEffect(() => {
+    if (!settingsOpen || settingsTab !== 'admin-households' || !isAdmin) return;
+    refreshAdminHouseholds().catch((error) => {
+      setSettingsNotice('error', error.message || 'Could not load admin household data.');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settingsOpen, settingsTab, isAdmin]);
+
+  useEffect(() => {
+    if (!hasActiveHousehold && activeView !== 'overview') {
+      setActiveView('overview');
+    }
+  }, [activeView, hasActiveHousehold]);
+
   async function handleLogout() {
     setBusy(true);
     try {
       await budgetApi.logout();
       setSession({ status: 'anonymous', user: null });
+      setData({
+        lookups: DEFAULT_LOOKUPS,
+        households: [],
+        activeHousehold: null,
+        accounts: [],
+        transactions: [],
+        recurringRules: [],
+        recurringOverrides: [],
+        budgets: [],
+        reconciliations: [],
+        loanPayments: [],
+        loanDraws: [],
+      });
       setSettingsOpen(false);
       setSettingsUsers([]);
+      setHouseholdMembers([]);
+      setHouseholdInvites([]);
     } catch (error) {
       setBanner({ type: 'error', message: error.message });
     } finally {
@@ -1023,7 +1410,7 @@ export default function App() {
   }
 
   function resetProfileDraft() {
-    setProfileDraft({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    setProfileDraft(getDefaultProfileDraft(session.user));
   }
 
   function resetUserDraft() {
@@ -1038,29 +1425,343 @@ export default function App() {
     setSettingsUsers(response.users || []);
   }
 
+  async function refreshAdminHouseholds(selectedId = adminSelectedHouseholdId) {
+    if (!isAdmin) return;
+    const response = await budgetApi.listAdminHouseholds();
+    const households = response.households || [];
+    setAdminHouseholds(households);
+    const nextId = selectedId && households.some((item) => item.id === selectedId)
+      ? selectedId
+      : households[0]?.id || null;
+    setAdminSelectedHouseholdId(nextId);
+    if (nextId) {
+      await refreshActiveHouseholdMembers(nextId);
+    } else {
+      setHouseholdMembers([]);
+      setHouseholdInvites([]);
+    }
+  }
+
   async function openSettings(tab = 'profile') {
-    const activeTab = isAdmin ? tab : 'profile';
+    const activeTab = ['households', 'admin-households'].includes(tab) ? tab : isAdmin ? tab : 'profile';
     setSettingsOpen(true);
     setSettingsTab(activeTab);
     setSettingsMessage({ type: '', message: '' });
     setAdminSettingsDraft(settingsDraftFromLookups(lookups));
+    setHouseholdDraft({ name: 'My Household' });
+    setHouseholdAssignmentDraft({ userId: '', role: 'Member' });
+    setHouseholdInviteRole('Member');
+    setLatestInviteLink('');
     resetProfileDraft();
     resetUserDraft();
 
-    if (!isAdmin) return;
     setSettingsBusy(true);
     try {
-      const [settingsResponse, usersResponse] = await Promise.all([
-        budgetApi.getSettings(),
-        budgetApi.listUsers(),
-      ]);
-      setAdminSettingsDraft(settingsDraftFromLookups({
-        ...lookups,
-        ...(settingsResponse.settings || {}),
-      }));
-      setSettingsUsers(usersResponse.users || []);
+      if (activeTab === 'households') {
+        await refreshActiveHouseholdMembers();
+      }
+      if (isAdmin) {
+        const [settingsResponse, usersResponse] = await Promise.all([
+          budgetApi.getSettings(),
+          budgetApi.listUsers(),
+        ]);
+        setAdminSettingsDraft(settingsDraftFromLookups({
+          ...lookups,
+          ...(settingsResponse.settings || {}),
+        }));
+        setSettingsUsers(usersResponse.users || []);
+        if (activeTab === 'admin-households') {
+          await refreshAdminHouseholds();
+        }
+      }
     } catch (error) {
       setSettingsNotice('error', error.message || 'Could not load settings.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function switchActiveHousehold(householdId) {
+    setBusy(true);
+    try {
+      const payload = await budgetApi.switchHousehold(householdId);
+      applyBootstrapPayload(payload);
+      setSuccess('Household switched.');
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function acceptPendingInvite() {
+    if (!inviteToken || !inviteInfo) return;
+    setBusy(true);
+    try {
+      const payload = await budgetApi.acceptInvite(inviteToken);
+      applyBootstrapPayload(payload);
+      clearInviteTokenFromUrl();
+      setInviteToken('');
+      setInviteInfo(null);
+      setBanner({ type: 'success', message: `Joined ${inviteInfo.householdName}.` });
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createHouseholdFromSettings(event) {
+    event.preventDefault();
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.createHousehold({ name: householdDraft.name || 'My Household' });
+      setHouseholdDraft({ name: 'My Household' });
+      await loadWorkspace();
+      if (settingsOpen) {
+        setSettingsTab('households');
+      }
+      setSettingsNotice('success', 'Household created.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not create household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function renameActiveHousehold(event) {
+    event.preventDefault();
+    const householdId = getTargetHouseholdId();
+    if (!householdId) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.renameHousehold(householdId, { name: householdRenameDraft });
+      await loadWorkspace();
+      await refreshActiveHouseholdMembers(householdId);
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds(householdId);
+      }
+      setSettingsNotice('success', 'Household updated.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not update household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function createInviteLink(event) {
+    event.preventDefault();
+    const householdId = getTargetHouseholdId();
+    if (!householdId) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      const response = await budgetApi.createHouseholdInvite(householdId, { role: householdInviteRole });
+      setLatestInviteLink(response.invite?.inviteUrl || '');
+      await refreshActiveHouseholdMembers(householdId);
+      setSettingsNotice('success', 'Invite link created.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not create invite.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function saveProfileDetails(event) {
+    event.preventDefault();
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      const response = await budgetApi.updateOwnProfile({
+        firstName: profileDraft.firstName,
+        lastName: profileDraft.lastName,
+        phone: profileDraft.phone,
+        gender: profileDraft.gender,
+        annualHouseholdIncome: profileDraft.annualHouseholdIncome,
+      });
+      setSession((current) => ({ ...current, user: response.user }));
+      setProfileDraft((current) => ({
+        ...getDefaultProfileDraft(response.user),
+        currentPassword: current.currentPassword,
+        newPassword: current.newPassword,
+        confirmPassword: current.confirmPassword,
+      }));
+      setSettingsNotice('success', 'Profile updated.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not update profile.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function updateMemberRole(memberId, role) {
+    const householdId = getTargetHouseholdId();
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.updateHouseholdMember(memberId, { role });
+      await refreshActiveHouseholdMembers(householdId);
+      await loadWorkspace();
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds(householdId);
+      }
+      setSettingsNotice('success', 'Member role updated.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not update member role.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function leaveHousehold(household) {
+    if (!household?.id) return;
+    if (!window.confirm(`Leave ${household.name}?`)) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.leaveHousehold(household.id);
+      await loadWorkspace();
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds(household.id);
+      } else {
+        await refreshActiveHouseholdMembers();
+      }
+      setSettingsNotice('success', `You left ${household.name}.`);
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not leave household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  function openArchiveHouseholdConfirm(household) {
+    setArchiveConfirm({
+      open: true,
+      checked: false,
+      householdId: household.id,
+      householdName: household.name,
+    });
+  }
+
+  async function confirmArchiveHousehold() {
+    if (!archiveConfirm.householdId) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.archiveHousehold(archiveConfirm.householdId, {
+        confirmArchive: true,
+        acknowledgePermanentDelete: archiveConfirm.checked,
+      });
+      setArchiveConfirm({ open: false, checked: false, householdId: null, householdName: '' });
+      await loadWorkspace();
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds();
+      } else {
+        await refreshActiveHouseholdMembers();
+      }
+      setSettingsNotice('success', 'Household archived. It can be restored by an admin for 30 days.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not archive household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function restoreArchivedHousehold(householdId) {
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.restoreAdminHousehold(householdId);
+      await refreshAdminHouseholds(householdId);
+      setSettingsNotice('success', 'Household restored.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not restore household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  function setAdminHouseholdSortKey(sortKey) {
+    setAdminHouseholdSort((current) => (
+      current.key === sortKey
+        ? { key: sortKey, direction: current.direction === 'asc' ? 'desc' : 'asc' }
+        : { key: sortKey, direction: sortKey === 'name' ? 'asc' : 'desc' }
+    ));
+  }
+
+  async function addCurrentAdminToHousehold(householdId) {
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.addHouseholdMember(householdId, { userId: session.user.id, role: 'Member' });
+      await refreshAdminHouseholds(householdId);
+      await loadWorkspace();
+      setSettingsNotice('success', 'You were added to the household.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not add you to the household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function removeCurrentAdminFromHousehold(household) {
+    if (!household?.currentUserMembershipId) return;
+    if (!window.confirm(`Remove yourself from ${household.name}?`)) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.removeHouseholdMember(household.currentUserMembershipId);
+      await refreshAdminHouseholds(household.id);
+      await loadWorkspace();
+      setSettingsNotice('success', 'You were removed from the household.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not remove you from the household.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function removeMember(member) {
+    const householdId = getTargetHouseholdId();
+    if (!window.confirm(`Remove ${member.username} from this household?`)) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.removeHouseholdMember(member.id);
+      await refreshActiveHouseholdMembers(householdId);
+      await loadWorkspace();
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds(householdId);
+      }
+      setSettingsNotice('success', 'Member removed.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not remove member.');
+    } finally {
+      setSettingsBusy(false);
+    }
+  }
+
+  async function addExistingUserToHousehold(event) {
+    event.preventDefault();
+    const householdId = getTargetHouseholdId();
+    if (!householdId) return;
+    setSettingsBusy(true);
+    setSettingsMessage({ type: '', message: '' });
+    try {
+      await budgetApi.addHouseholdMember(householdId, {
+        userId: Number(householdAssignmentDraft.userId),
+        role: householdAssignmentDraft.role,
+      });
+      setHouseholdAssignmentDraft({ userId: '', role: 'Member' });
+      await refreshActiveHouseholdMembers(householdId);
+      if (settingsTab === 'admin-households' && isAdmin) {
+        await refreshAdminHouseholds(householdId);
+      }
+      setSettingsNotice('success', 'User assigned to household.');
+    } catch (error) {
+      setSettingsNotice('error', error.message || 'Could not assign user.');
     } finally {
       setSettingsBusy(false);
     }
@@ -1793,10 +2494,12 @@ export default function App() {
 
   if (session.status !== 'authenticated') {
     return (
-      <LoginView
+      <AuthView
         busy={busy}
         error={banner.type === 'error' ? banner.message : ''}
-        onSubmit={handleLogin}
+        inviteInfo={inviteInfo}
+        onLogin={handleLogin}
+        onSignup={handleSignup}
       />
     );
   }
@@ -1804,7 +2507,7 @@ export default function App() {
   const chartAccounts = selectedAccountFilter === 'all'
     ? activeCashAccounts.slice(0, 4)
     : activeCashAccounts.filter((account) => account.id === selectedAccountFilter);
-  const showsProjectionControls = activeView === 'overview' || activeView === 'transactions';
+  const showsProjectionControls = hasActiveHousehold && (activeView === 'overview' || activeView === 'transactions');
 
   return (
     <div className="app-shell">
@@ -1821,6 +2524,19 @@ export default function App() {
         </div>
         <div className="hero-actions">
           <div className="user-chip">
+            {data.households.length ? (
+              <select
+                className="household-switcher"
+                value={data.activeHousehold?.id || ''}
+                onChange={(event) => switchActiveHousehold(Number(event.target.value))}
+              >
+                {data.households.map((household) => (
+                  <option key={household.id} value={household.id}>
+                    {household.name}{household.role ? ` · ${household.role}` : ''}
+                  </option>
+                ))}
+              </select>
+            ) : null}
             <span>{session.user.username}</span>
             <span className="user-role">{session.user.role}</span>
             <button
@@ -1867,6 +2583,7 @@ export default function App() {
             key={view.id}
             type="button"
             className={`tab-button${activeView === view.id ? ' active' : ''}`}
+            disabled={!hasActiveHousehold && view.id !== 'overview'}
             onClick={() => setActiveView(view.id)}
           >
             {view.label}
@@ -1878,6 +2595,55 @@ export default function App() {
         <div className={`banner ${banner.type === 'error' ? 'error' : 'success'}`}>
           {banner.message}
         </div>
+      ) : null}
+
+      {inviteInfo ? (
+        <section className="panel household-empty-state">
+          <div className="panel-head compact">
+            <div>
+              <div className="kicker">Invite Link</div>
+              <h2>Join {inviteInfo.householdName}</h2>
+            </div>
+          </div>
+          <p className="auth-copy">
+            This invite grants {inviteInfo.role.toLowerCase()} access. It stays valid until an account accepts it or the 7 day window expires.
+          </p>
+          <div className="form-actions">
+            <button type="button" className="primary-button" onClick={acceptPendingInvite} disabled={busy || session.status !== 'authenticated'}>
+              Join household
+            </button>
+            <button
+              type="button"
+              className="soft-button"
+              onClick={() => {
+                clearInviteTokenFromUrl();
+                setInviteToken('');
+                setInviteInfo(null);
+              }}
+            >
+              Dismiss link
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      {!hasActiveHousehold ? (
+        <section className="panel household-empty-state">
+          <div className="panel-head">
+            <div>
+              <div className="kicker">Households</div>
+              <h2>Create or join your first household</h2>
+            </div>
+          </div>
+          <p className="auth-copy">
+            Households keep financial data separated by person, family, or shared budget. Create one now or use a household invite link.
+          </p>
+          <div className="form-actions">
+            <button type="button" className="primary-button" onClick={() => openSettings('households')}>
+              Open household settings
+            </button>
+          </div>
+        </section>
       ) : null}
 
       {showsProjectionControls ? (
@@ -1935,7 +2701,7 @@ export default function App() {
       </section>
       ) : null}
 
-      {activeView === 'overview' ? (
+      {hasActiveHousehold && activeView === 'overview' ? (
         <div className="content-grid">
           <section className="metric-grid">
             <MetricCard
@@ -2059,7 +2825,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {activeView === 'transactions' ? (
+      {hasActiveHousehold && activeView === 'transactions' ? (
         <div className={`content-grid ${transactionEntryMode === 'batch' ? 'transaction-batch-layout' : 'split'}`}>
           <SectionCard
             title={editingTransactionId ? 'Edit transaction' : isEditingGeneratedOccurrence ? 'Edit recurring occurrence' : transactionEntryMode === 'batch' ? 'Batch transaction entry' : 'Add transaction'}
@@ -2474,7 +3240,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {activeView === 'recurring' ? (
+      {hasActiveHousehold && activeView === 'recurring' ? (
         <div className="content-grid split">
           <SectionCard
             title={editingRuleId ? 'Edit recurring rule' : 'Add recurring rule'}
@@ -2836,7 +3602,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {activeView === 'accounts' ? (
+      {hasActiveHousehold && activeView === 'accounts' ? (
         <div className="content-grid split">
           <SectionCard
             title={editingAccountId ? 'Edit account' : 'Add account'}
@@ -3044,13 +3810,13 @@ export default function App() {
         </div>
       ) : null}
 
-      {activeView === 'loans' ? (
+      {hasActiveHousehold && activeView === 'loans' ? (
         <div className="content-grid">
           <LegacyLoanManager />
         </div>
       ) : null}
 
-      {activeView === 'budgets' ? (
+      {hasActiveHousehold && activeView === 'budgets' ? (
         <div className="content-grid">
           <SectionCard
             title="Budget planner"
@@ -3254,7 +4020,7 @@ export default function App() {
         </div>
       ) : null}
 
-      {activeView === 'reconcile' ? (
+      {hasActiveHousehold && activeView === 'reconcile' ? (
         <div className="content-grid split">
           <SectionCard title="Reconcile account" kicker="Tie your ledger to a statement balance">
             <form className="form-grid" onSubmit={saveReconciliation}>
@@ -3413,7 +4179,7 @@ export default function App() {
 
       {settingsOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
-          <section className="settings-modal panel">
+          <section className={`settings-modal panel${settingsTab === 'admin-households' ? ' settings-modal-wide' : ''}`}>
             <div className="panel-head">
               <div>
                 <div className="kicker">Workspace Settings</div>
@@ -3432,6 +4198,13 @@ export default function App() {
               >
                 Profile
               </button>
+              <button
+                type="button"
+                className={`soft-button${settingsTab === 'households' ? ' active' : ''}`}
+                onClick={() => setSettingsTab('households')}
+              >
+                Households
+              </button>
               {isAdmin ? (
                 <>
                   <button
@@ -3448,6 +4221,13 @@ export default function App() {
                   >
                     Users
                   </button>
+                  <button
+                    type="button"
+                    className={`soft-button${settingsTab === 'admin-households' ? ' active' : ''}`}
+                    onClick={() => setSettingsTab('admin-households')}
+                  >
+                    Admin Households
+                  </button>
                 </>
               ) : null}
             </div>
@@ -3459,7 +4239,7 @@ export default function App() {
             ) : null}
 
             {settingsTab === 'profile' ? (
-              <form className="settings-section" onSubmit={changeOwnPassword}>
+              <div className="settings-section">
                 <div className="mini-metric-grid">
                   <div className="mini-metric">
                     <span>Signed in as</span>
@@ -3470,7 +4250,57 @@ export default function App() {
                     <strong>{session.user.role}</strong>
                   </div>
                 </div>
-                <div className="form-grid">
+                <form className="form-grid" onSubmit={saveProfileDetails}>
+                  <Field label="First name">
+                    <input
+                      value={profileDraft.firstName}
+                      onChange={(event) => setProfileDraft((current) => ({ ...current, firstName: event.target.value }))}
+                      autoComplete="given-name"
+                    />
+                  </Field>
+                  <Field label="Last name">
+                    <input
+                      value={profileDraft.lastName}
+                      onChange={(event) => setProfileDraft((current) => ({ ...current, lastName: event.target.value }))}
+                      autoComplete="family-name"
+                    />
+                  </Field>
+                  <Field label="Phone number">
+                    <input
+                      value={profileDraft.phone}
+                      onChange={(event) => setProfileDraft((current) => ({ ...current, phone: event.target.value }))}
+                      autoComplete="tel"
+                    />
+                  </Field>
+                  <Field label="Gender">
+                    <select
+                      value={profileDraft.gender}
+                      onChange={(event) => setProfileDraft((current) => ({ ...current, gender: event.target.value }))}
+                    >
+                      {GENDER_OPTIONS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field label="Annual household income">
+                    <select
+                      value={profileDraft.annualHouseholdIncome}
+                      onChange={(event) => setProfileDraft((current) => ({ ...current, annualHouseholdIncome: event.target.value }))}
+                    >
+                      <option value="">Select income range</option>
+                      {INCOME_BRACKETS.map((option) => (
+                        <option key={option} value={option}>{option}</option>
+                      ))}
+                    </select>
+                  </Field>
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button" disabled={settingsBusy}>
+                      Save profile
+                    </button>
+                  </div>
+                </form>
+
+                <form className="form-grid" onSubmit={changeOwnPassword}>
                   <Field label="Current password">
                     <input
                       type="password"
@@ -3495,16 +4325,517 @@ export default function App() {
                       autoComplete="new-password"
                     />
                   </Field>
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button" disabled={settingsBusy}>
+                      Update password
+                    </button>
+                    <button type="button" className="soft-button" onClick={resetProfileDraft}>
+                      Reset form
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : null}
+
+            {settingsTab === 'households' ? (
+              <div className="settings-section">
+                <div className="mini-metric-grid">
+                  <div className="mini-metric">
+                    <span>Active household</span>
+                    <strong>{data.activeHousehold?.name || 'None selected'}</strong>
+                  </div>
+                  <div className="mini-metric">
+                    <span>Your access</span>
+                    <strong>{data.activeHousehold?.role || 'No household'}</strong>
+                  </div>
                 </div>
-                <div className="form-actions">
-                  <button type="submit" className="primary-button" disabled={settingsBusy}>
-                    Update password
-                  </button>
-                  <button type="button" className="soft-button" onClick={resetProfileDraft}>
-                    Clear
-                  </button>
+
+                {data.activeHousehold ? (
+                  <div className="form-actions">
+                    <button
+                      type="button"
+                      className="soft-button"
+                      onClick={() => leaveHousehold(data.activeHousehold)}
+                      disabled={settingsBusy}
+                    >
+                      Leave household
+                    </button>
+                    {canManageActiveHousehold ? (
+                      <button
+                        type="button"
+                        className="soft-button danger-button"
+                        onClick={() => openArchiveHouseholdConfirm(data.activeHousehold)}
+                        disabled={settingsBusy}
+                      >
+                        Delete household
+                      </button>
+                    ) : null}
+                    {isAdmin ? (
+                      <button type="button" className="soft-button" onClick={() => setSettingsTab('admin-households')}>
+                        Open admin household view
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                <form className="form-grid" onSubmit={createHouseholdFromSettings}>
+                  <Field label="Create household">
+                    <input
+                      value={householdDraft.name}
+                      onChange={(event) => setHouseholdDraft({ name: event.target.value })}
+                      placeholder="My Household"
+                    />
+                  </Field>
+                  <div className="form-actions">
+                    <button type="submit" className="primary-button" disabled={settingsBusy}>
+                      Create household
+                    </button>
+                  </div>
+                </form>
+
+                {data.households.length ? (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Household</th>
+                          <th>Your role</th>
+                          <th>Access</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {data.households.map((household) => (
+                          <tr key={household.id}>
+                            <td>
+                              <div className="table-primary">{household.name}</div>
+                              {data.activeHousehold?.id === household.id ? <div className="table-secondary">Current</div> : null}
+                            </td>
+                            <td>{household.role}</td>
+                            <td>{household.canEdit ? 'Edit' : 'View only'}</td>
+                            <td>
+                              <div className="settings-user-actions">
+                                {data.activeHousehold?.id === household.id ? (
+                                  <span className="table-secondary">Selected</span>
+                                ) : (
+                                  <button type="button" className="soft-button" onClick={() => switchActiveHousehold(household.id)}>
+                                    Switch
+                                  </button>
+                                )}
+                                <button type="button" className="soft-button" onClick={() => leaveHousehold(household)} disabled={settingsBusy}>
+                                  Leave
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : null}
+
+                {data.activeHousehold ? (
+                  <>
+                    {(canManageActiveHousehold || isAdmin) ? (
+                      <form className="form-grid" onSubmit={renameActiveHousehold}>
+                        <Field label="Rename active household">
+                          <input
+                            value={householdRenameDraft}
+                            onChange={(event) => setHouseholdRenameDraft(event.target.value)}
+                          />
+                        </Field>
+                        <div className="form-actions">
+                          <button type="submit" className="primary-button" disabled={settingsBusy}>
+                            Save household
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
+
+                    {(canManageActiveHousehold || isAdmin) ? (
+                      <form className="form-grid" onSubmit={createInviteLink}>
+                        <Field label="Invite role">
+                          <select
+                            value={householdInviteRole}
+                            onChange={(event) => setHouseholdInviteRole(event.target.value)}
+                          >
+                            {HOUSEHOLD_ROLES.map((role) => (
+                              <option key={role} value={role}>{role}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="form-actions">
+                          <button type="submit" className="primary-button" disabled={settingsBusy}>
+                            Create invite link
+                          </button>
+                        </div>
+                        {latestInviteLink ? (
+                          <Field label="Latest invite link">
+                            <div className="inline-group">
+                              <input value={latestInviteLink} readOnly />
+                              <button
+                                type="button"
+                                className="soft-button"
+                                onClick={() => navigator.clipboard?.writeText(latestInviteLink)}
+                              >
+                                Copy
+                              </button>
+                            </div>
+                          </Field>
+                        ) : null}
+                      </form>
+                    ) : null}
+
+                    {isAdmin ? (
+                      <form className="form-grid" onSubmit={addExistingUserToHousehold}>
+                        <Field label="Assign existing user">
+                          <select
+                            value={householdAssignmentDraft.userId}
+                            onChange={(event) => setHouseholdAssignmentDraft((current) => ({ ...current, userId: event.target.value }))}
+                          >
+                            <option value="">Select user</option>
+                            {settingsUsers
+                              .filter((user) => !householdMembers.some((member) => member.userId === user.id))
+                              .map((user) => (
+                                <option key={user.id} value={user.id}>{user.username}</option>
+                              ))}
+                          </select>
+                        </Field>
+                        <Field label="Role">
+                          <select
+                            value={householdAssignmentDraft.role}
+                            onChange={(event) => setHouseholdAssignmentDraft((current) => ({ ...current, role: event.target.value }))}
+                          >
+                            {HOUSEHOLD_ROLES.map((role) => (
+                              <option key={role} value={role}>{role}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <div className="form-actions">
+                          <button type="submit" className="primary-button" disabled={settingsBusy || !householdAssignmentDraft.userId}>
+                            Assign user
+                          </button>
+                        </div>
+                      </form>
+                    ) : null}
+
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Member</th>
+                            <th>App role</th>
+                            <th>Household role</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {householdMembers.map((member) => (
+                            <tr key={member.id}>
+                              <td>
+                                <div className="table-primary">{member.username}</div>
+                                {member.userId === session.user.id ? <div className="table-secondary">You</div> : null}
+                              </td>
+                              <td>{member.appRole}</td>
+                              <td>
+                                {(canManageActiveHousehold || isAdmin) ? (
+                                  <select
+                                    value={member.role}
+                                    onChange={(event) => updateMemberRole(member.id, event.target.value)}
+                                  >
+                                    {HOUSEHOLD_ROLES.map((role) => (
+                                      <option key={role} value={role}>{role}</option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  member.role
+                                )}
+                              </td>
+                              <td>{member.disabled ? 'Disabled' : 'Active'}</td>
+                              <td>
+                                {(canManageActiveHousehold || isAdmin) ? (
+                                  <button type="button" className="link-button danger" onClick={() => removeMember(member)}>
+                                    Remove
+                                  </button>
+                                ) : (
+                                  <span className="table-secondary">Read only</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {!householdMembers.length ? (
+                        <div className="empty-state">No household members yet.</div>
+                      ) : null}
+                    </div>
+
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Pending invites</th>
+                            <th>Role</th>
+                            <th>Created by</th>
+                            <th>Expires</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {householdInvites.map((invite) => (
+                            <tr key={invite.id}>
+                              <td>Invite #{invite.id}</td>
+                              <td>{invite.role}</td>
+                              <td>{invite.createdByUsername || 'Unknown'}</td>
+                              <td>{formatDateLabel(invite.expiresAt.slice(0, 10))}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {!householdInvites.length ? (
+                        <div className="empty-state">No pending invites.</div>
+                      ) : null}
+                    </div>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
+            {settingsTab === 'admin-households' && isAdmin ? (
+              <div className="settings-section">
+                <div className="form-grid">
+                  <Field label="Search households">
+                    <input
+                      value={adminHouseholdSearch}
+                      onChange={(event) => setAdminHouseholdSearch(event.target.value)}
+                      placeholder="Search household, owner, or status"
+                    />
+                  </Field>
                 </div>
-              </form>
+
+                <div className="table-wrap">
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th><button type="button" className="link-button" onClick={() => setAdminHouseholdSortKey('name')}>Household</button></th>
+                        <th><button type="button" className="link-button" onClick={() => setAdminHouseholdSortKey('ownerUsername')}>Owner</button></th>
+                        <th>Status</th>
+                        <th><button type="button" className="link-button" onClick={() => setAdminHouseholdSortKey('createdAt')}>Created</button></th>
+                        <th><button type="button" className="link-button" onClick={() => setAdminHouseholdSortKey('lastActivityAt')}>Last Used</button></th>
+                        <th>Members</th>
+                        <th>Accounts</th>
+                        <th>Transactions</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredAdminHouseholds.map((household) => (
+                        <tr key={household.id}>
+                          <td>
+                            <div className="table-primary">{household.name}</div>
+                            {adminSelectedHouseholdId === household.id ? <div className="table-secondary">Selected</div> : null}
+                          </td>
+                          <td>
+                            <div className="table-primary">{household.ownerUsername || 'Unknown'}</div>
+                            <div className="table-secondary">{[household.ownerFirstName, household.ownerLastName].filter(Boolean).join(' ') || 'No profile name'}</div>
+                          </td>
+                          <td><span className={`pill ${household.status === 'archived' ? 'muted' : household.status === 'abandoned' ? 'warning' : 'success'}`}>{household.status}</span></td>
+                          <td>{formatDateLabel(household.createdAt.slice(0, 10))}</td>
+                          <td>{formatDateLabel((household.lastActivityAt || household.updatedAt || household.createdAt).slice(0, 10))}</td>
+                          <td>{household.memberCount}</td>
+                          <td>{household.accountCount}</td>
+                          <td>{household.transactionCount}</td>
+                          <td>
+                            <div className="settings-user-actions">
+                              <button
+                                type="button"
+                                className="soft-button"
+                                onClick={async () => {
+                                  setAdminSelectedHouseholdId(household.id);
+                                  setHouseholdRenameDraft(household.name);
+                                  await refreshActiveHouseholdMembers(household.id);
+                                }}
+                              >
+                                Edit
+                              </button>
+                              {!household.isCurrentUserMember && household.status !== 'archived' ? (
+                                <button type="button" className="soft-button" onClick={() => addCurrentAdminToHousehold(household.id)}>
+                                  Add Self
+                                </button>
+                              ) : null}
+                              {household.isCurrentUserMember ? (
+                                <button
+                                  type="button"
+                                  className="soft-button"
+                                  onClick={() => removeCurrentAdminFromHousehold(household)}
+                                >
+                                  Remove Self
+                                </button>
+                              ) : null}
+                              {household.status === 'archived' ? (
+                                <button type="button" className="soft-button" onClick={() => restoreArchivedHousehold(household.id)}>
+                                  Restore
+                                </button>
+                              ) : (
+                                <button type="button" className="soft-button danger-button" onClick={() => openArchiveHouseholdConfirm(household)}>
+                                  Archive
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!filteredAdminHouseholds.length ? (
+                    <div className="empty-state">No households match the current search.</div>
+                  ) : null}
+                </div>
+
+                {adminSelectedHousehold ? (
+                  <>
+                    <div className="mini-metric-grid">
+                      <div className="mini-metric">
+                        <span>Editing household</span>
+                        <strong>{adminSelectedHousehold.name}</strong>
+                      </div>
+                      <div className="mini-metric">
+                        <span>Status</span>
+                        <strong>{adminSelectedHousehold.status}</strong>
+                      </div>
+                      <div className="mini-metric">
+                        <span>{adminSelectedHousehold.status === 'archived' ? 'Delete after' : 'Last used'}</span>
+                        <strong>
+                          {formatDateLabel(
+                            (
+                              adminSelectedHousehold.status === 'archived'
+                                ? adminSelectedHousehold.purgeAfter
+                                : adminSelectedHousehold.lastActivityAt || adminSelectedHousehold.updatedAt || adminSelectedHousehold.createdAt
+                            )?.slice(0, 10) || getTodayKey(),
+                          )}
+                        </strong>
+                      </div>
+                    </div>
+
+                    {adminSelectedHousehold.status !== 'archived' ? (
+                      <>
+                        <form className="form-grid" onSubmit={renameActiveHousehold}>
+                          <Field label="Rename household">
+                            <input
+                              value={householdRenameDraft}
+                              onChange={(event) => setHouseholdRenameDraft(event.target.value)}
+                            />
+                          </Field>
+                          <div className="form-actions">
+                            <button type="submit" className="primary-button" disabled={settingsBusy}>
+                              Save household
+                            </button>
+                          </div>
+                        </form>
+
+                        <form className="form-grid" onSubmit={createInviteLink}>
+                          <Field label="Invite role">
+                            <select value={householdInviteRole} onChange={(event) => setHouseholdInviteRole(event.target.value)}>
+                              {HOUSEHOLD_ROLES.map((role) => (
+                                <option key={role} value={role}>{role}</option>
+                              ))}
+                            </select>
+                          </Field>
+                          <div className="form-actions">
+                            <button type="submit" className="primary-button" disabled={settingsBusy}>
+                              Create invite link
+                            </button>
+                          </div>
+                          {latestInviteLink ? (
+                            <Field label="Latest invite link">
+                              <div className="inline-group">
+                                <input value={latestInviteLink} readOnly />
+                                <button
+                                  type="button"
+                                  className="soft-button"
+                                  onClick={() => navigator.clipboard?.writeText(latestInviteLink)}
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                            </Field>
+                          ) : null}
+                        </form>
+
+                        <form className="form-grid" onSubmit={addExistingUserToHousehold}>
+                          <Field label="Assign existing user">
+                            <select
+                              value={householdAssignmentDraft.userId}
+                              onChange={(event) => setHouseholdAssignmentDraft((current) => ({ ...current, userId: event.target.value }))}
+                            >
+                              <option value="">Select user</option>
+                              {settingsUsers
+                                .filter((user) => !householdMembers.some((member) => member.userId === user.id))
+                                .map((user) => (
+                                  <option key={user.id} value={user.id}>{user.username}</option>
+                                ))}
+                            </select>
+                          </Field>
+                          <Field label="Role">
+                            <select
+                              value={householdAssignmentDraft.role}
+                              onChange={(event) => setHouseholdAssignmentDraft((current) => ({ ...current, role: event.target.value }))}
+                            >
+                              {HOUSEHOLD_ROLES.map((role) => (
+                                <option key={role} value={role}>{role}</option>
+                              ))}
+                            </select>
+                          </Field>
+                          <div className="form-actions">
+                            <button type="submit" className="primary-button" disabled={settingsBusy || !householdAssignmentDraft.userId}>
+                              Assign user
+                            </button>
+                          </div>
+                        </form>
+                      </>
+                    ) : null}
+
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Member</th>
+                            <th>Name</th>
+                            <th>Role</th>
+                            <th>Phone</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {householdMembers.map((member) => (
+                            <tr key={member.id}>
+                              <td>{member.username}</td>
+                              <td>{[member.firstName, member.lastName].filter(Boolean).join(' ') || 'No profile name'}</td>
+                              <td>
+                                {adminSelectedHousehold.status === 'archived' ? member.role : (
+                                  <select value={member.role} onChange={(event) => updateMemberRole(member.id, event.target.value)}>
+                                    {HOUSEHOLD_ROLES.map((role) => (
+                                      <option key={role} value={role}>{role}</option>
+                                    ))}
+                                  </select>
+                                )}
+                              </td>
+                              <td>{member.phone || '—'}</td>
+                              <td>
+                                {adminSelectedHousehold.status === 'archived' ? '—' : (
+                                  <button type="button" className="link-button danger" onClick={() => removeMember(member)}>
+                                    Remove
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                ) : null}
+              </div>
             ) : null}
 
             {settingsTab === 'defaults' && isAdmin ? (
@@ -3677,6 +5008,57 @@ export default function App() {
                 </div>
               </div>
             ) : null}
+          </section>
+        </div>
+      ) : null}
+
+      {archiveConfirm.open ? (
+        <div className="modal-backdrop modal-backdrop-nested" role="dialog" aria-modal="true" aria-labelledby="archive-household-title">
+          <section className="confirm-modal panel">
+            <div className="panel-head">
+              <div>
+                <div className="kicker">Household Deletion</div>
+                <h2 id="archive-household-title">Delete {archiveConfirm.householdName}</h2>
+              </div>
+              <button
+                type="button"
+                className="soft-button"
+                onClick={() => setArchiveConfirm({ open: false, checked: false, householdId: null, householdName: '' })}
+                disabled={settingsBusy}
+              >
+                Close
+              </button>
+            </div>
+            <div className="warning-item overdraft">
+              <strong>This household will be removed from all member views immediately.</strong>
+              <span>Its data will stay archived for 30 days for admin recovery, then it will be permanently deleted and cannot be restored.</span>
+            </div>
+            <label className="checkbox-row">
+              <input
+                type="checkbox"
+                checked={archiveConfirm.checked}
+                onChange={(event) => setArchiveConfirm((current) => ({ ...current, checked: event.target.checked }))}
+              />
+              <span>I understand this household and all of its data will be unrecoverable after the 30 day archive window.</span>
+            </label>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="primary-button danger-button"
+                onClick={confirmArchiveHousehold}
+                disabled={settingsBusy || !archiveConfirm.checked}
+              >
+                {settingsBusy ? 'Deleting...' : 'Confirm delete'}
+              </button>
+              <button
+                type="button"
+                className="soft-button"
+                onClick={() => setArchiveConfirm({ open: false, checked: false, householdId: null, householdName: '' })}
+                disabled={settingsBusy}
+              >
+                Cancel
+              </button>
+            </div>
           </section>
         </div>
       ) : null}

@@ -56,6 +56,8 @@ textarea {
   border: 1px solid rgba(148, 163, 184, 0.32);
   background: rgba(255, 255, 255, 0.96);
   padding: 0.8rem 0.92rem;
+  min-height: 48px;
+  line-height: 1.25;
   color: var(--ink-1);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
@@ -134,6 +136,15 @@ code {
   margin-top: 1.5rem;
 }
 
+.hidden-autofill-field {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .dev-note {
   margin-top: 1rem;
   color: var(--ink-3);
@@ -188,6 +199,23 @@ code {
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 999px;
   padding: 0.5rem 0.65rem 0.5rem 0.95rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.household-switcher {
+  width: auto;
+  min-width: 12rem;
+  border-radius: 999px;
+  padding: 0.55rem 2.2rem 0.55rem 0.9rem;
+}
+
+.auth-toggle {
+  margin-bottom: 1rem;
+}
+
+.household-empty-state {
+  margin-bottom: 1.2rem;
 }
 
 .user-role {
@@ -574,8 +602,9 @@ code {
 
 .inline-group {
   display: grid;
-  grid-template-columns: 110px 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 0.7rem;
+  align-items: end;
 }
 
 .rule-list {
@@ -758,7 +787,7 @@ code {
 .data-table select,
 .planner-add-row input,
 .planner-add-row select {
-  min-height: 42px;
+  min-height: 44px;
   padding: 0.66rem 0.78rem;
   border-radius: 13px;
 }
@@ -925,17 +954,16 @@ code {
 }
 
 .budget-category-cell select {
-  max-width: 80px;
-  min-height: 0px;
-  padding: 0.25rem 0.55rem;
-  /* padding: 0 */
+  max-width: 100px;
+  min-height: 38px;
+  padding: 0.38rem 0.55rem;
 }
 
 .budget-amount-input {
-  max-width: 140px;
-  min-width: 100px;
-  /* min-height: 0px; */
-  max-height: 0px;
+  max-width: 160px;
+  min-width: 120px;
+  min-height: 38px;
+  max-height: none;
 }
 
 .detail-grid {
@@ -1146,6 +1174,21 @@ code {
   max-height: calc(100vh - 4rem);
   overflow: auto;
   background: rgba(255, 255, 255, 0.96);
+}
+
+.settings-modal-wide {
+  width: min(1360px, 100%);
+}
+
+.confirm-modal {
+  width: min(560px, 100%);
+  display: grid;
+  gap: 1rem;
+}
+
+.modal-backdrop-nested {
+  z-index: 60;
+  background: rgba(15, 23, 42, 0.36);
 }
 
 .settings-tabs {
