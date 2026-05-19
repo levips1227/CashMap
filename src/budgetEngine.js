@@ -728,7 +728,7 @@ export function describeRecurringRule(rule, accountMap) {
   return parts.join(' ');
 }
 
-export function getRulePreview(rule, recurringOverrides, transactions, daysAhead = 180) {
+export function getRulePreview(rule, recurringOverrides, transactions, daysAhead = 180, limit = 6) {
   const endDate = addDays(getTodayKey(), daysAhead);
-  return expandRecurringRules([rule], recurringOverrides, transactions, endDate).slice(0, 6);
+  return expandRecurringRules([rule], recurringOverrides, transactions, endDate).slice(0, limit);
 }

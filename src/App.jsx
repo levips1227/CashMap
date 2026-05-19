@@ -26,6 +26,12 @@ import {
   getRulePreview,
   getTodayKey,
 } from './budgetEngine';
+import DebtPayoffCalculator from './DebtPayoffCalculator';
+import {
+  buildLoanDebtRows,
+  createBlankDebtRow,
+  mergeLoanDebtRows,
+} from './debtPayoffUtils';
 import LegacyLoanManager from './LegacyLoanManager';
 
 const VIEW_OPTIONS = [
@@ -972,6 +978,19 @@ export default function App() {
   const [ruleDraft, setRuleDraft] = useState(getDefaultRuleDraft());
   const [editingRuleId, setEditingRuleId] = useState(null);
   const [overrideDraft, setOverrideDraft] = useState(null);
+  const [recurringModalRuleId, setRecurringModalRuleId] = useState(null);
+  const [recurringOverrideRows, setRecurringOverrideRows] = useState([]);
+  const [loanTab, setLoanTab] = useState('manager');
+  const [debtPayoffRows, setDebtPayoffRows] = useState([]);
+  const [debtPayoffLoading, setDebtPayoffLoading] = useState(false);
+  const [debtPayoffExtras, setDebtPayoffExtras] = useState({
+    monthly: '0',
+    yearly: '0',
+    oneTimeAmount: '0',
+    oneTimeMonth: '1',
+  });
+  const [debtPayoffFixedTotal, setDebtPayoffFixedTotal] = useState(true);
+  const [debtPayoffMethod, setDebtPayoffMethod] = useState('avalanche');
   const [budgetMonth, setBudgetMonth] = useState(getMonthKey(getTodayKey()));
   const [budgetPlannerRows, setBudgetPlannerRows] = useState([]);
   const [budgetPlannerCategory, setBudgetPlannerCategory] = useState('');
@@ -1062,6 +1081,7 @@ export default function App() {
     budgets: data.budgets,
   }), [lookups, data.transactions, data.recurringRules, data.budgets]);
   const selectedAccount = cashAccounts.find((account) => account.id === selectedAccountId) || cashAccounts[0] || null;
+  const recurringModalRule = data.recurringRules.find((rule) => rule.id === recurringModalRuleId) || null;
   const filledBatchRowCount = getMeaningfulBatchTransactionRows(batchTransactionRows).length;
   const selectedAccountFilter = filters.accountFilter === 'all' ? 'all' : Number(filters.accountFilter);
   const projection = buildProjection({
@@ -1367,6 +1387,13 @@ export default function App() {
       setActiveView('overview');
     }
   }, [activeView, hasActiveHousehold]);
+
+  useEffect(() => {
+    if (!hasActiveHousehold || activeView !== 'loans' || loanTab !== 'payoff') return;
+    refreshDebtPayoffLoanRows().catch((error) => {
+      setBanner({ type: 'error', message: error.message || 'Could not refresh loan payoff rows.' });
+    });
+  }, [activeView, loanTab, hasActiveHousehold]);
 
   async function handleLogout() {
     setBusy(true);
@@ -2420,6 +2447,100 @@ export default function App() {
     });
   }
 
+  function buildRecurringOverrideRows(rule) {
+    return getRulePreview(rule, data.recurringOverrides, data.transactions, 3650, 12).map((occurrence) => {
+      const existingOverride = data.recurringOverrides.find(
+        (item) => item.ruleId === rule.id && item.occurrenceDate === occurrence.date,
+      );
+      return {
+        rowId: `${rule.id}-${occurrence.date}`,
+        overrideId: existingOverride?.id ?? null,
+        ruleId: rule.id,
+        occurrenceDate: occurrence.date,
+        title: existingOverride?.title ?? occurrence.title,
+        amount: String(existingOverride?.amount ?? occurrence.amount),
+        originalAmount: String(rule.amount),
+        accountId: existingOverride?.accountId ?? occurrence.accountId,
+        toAccountId: existingOverride?.toAccountId ?? occurrence.toAccountId ?? '',
+        category: existingOverride?.category ?? occurrence.category ?? '',
+        notes: existingOverride?.notes ?? occurrence.notes ?? '',
+        status: existingOverride?.status ?? occurrence.status ?? 'projected',
+        direction: rule.direction,
+      };
+    });
+  }
+
+  function openRecurringOverrideModal(rule) {
+    setRecurringModalRuleId(rule.id);
+    setRecurringOverrideRows(buildRecurringOverrideRows(rule));
+  }
+
+  function closeRecurringOverrideModal() {
+    setRecurringModalRuleId(null);
+    setRecurringOverrideRows([]);
+  }
+
+  function updateRecurringOverrideRow(rowId, patch) {
+    setRecurringOverrideRows((current) => current.map((row) => (
+      row.rowId === rowId ? { ...row, ...patch } : row
+    )));
+  }
+
+  async function saveRecurringOverrideRows() {
+    if (!recurringModalRule) return;
+    setBusy(true);
+    try {
+      let saved = 0;
+      let deleted = 0;
+      for (const row of recurringOverrideRows) {
+        const amount = parseCurrencyInput(row.amount);
+        const originalAmount = parseCurrencyInput(row.originalAmount);
+        if (Math.abs(amount - originalAmount) < 0.005) {
+          if (row.overrideId) {
+            await budgetApi.deleteRecurringOverride(row.overrideId);
+            deleted += 1;
+          }
+          continue;
+        }
+        await budgetApi.upsertRecurringOverride({
+          ruleId: row.ruleId,
+          occurrenceDate: row.occurrenceDate,
+          action: 'modify',
+          amount,
+          title: row.title || recurringModalRule.title,
+          accountId: Number(row.accountId || recurringModalRule.accountId),
+          toAccountId: row.direction === 'transfer' && row.toAccountId ? Number(row.toAccountId) : null,
+          category: row.category || recurringModalRule.category,
+          notes: row.notes || recurringModalRule.notes,
+          status: row.status || 'projected',
+        });
+        saved += 1;
+      }
+      closeRecurringOverrideModal();
+      setSuccess(`${saved} recurring override${saved === 1 ? '' : 's'} saved${deleted ? ` and ${deleted} reset` : ''}.`);
+      await loadWorkspace();
+    } catch (error) {
+      setFailure(error);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function refreshDebtPayoffLoanRows(options = {}) {
+    setDebtPayoffLoading(true);
+    try {
+      const loanRows = await buildLoanDebtRows();
+      setDebtPayoffRows((current) => {
+        if (!current.length) {
+          return loanRows.length ? loanRows : [createBlankDebtRow()];
+        }
+        return mergeLoanDebtRows(current, loanRows, options);
+      });
+    } finally {
+      setDebtPayoffLoading(false);
+    }
+  }
+
   async function removeAccount(id) {
     if (!window.confirm('Delete this account? This only works if nothing references it yet.')) return;
     setBusy(true);
@@ -3400,7 +3521,7 @@ export default function App() {
           <SectionCard title="Recurring schedule" kicker="Projection engine">
             <div className="rule-list">
               {data.recurringRules.map((rule) => {
-                const preview = getRulePreview(rule, data.recurringOverrides, data.transactions);
+                const preview = getRulePreview(rule, data.recurringOverrides, data.transactions, 3650, 1);
                 return (
                   <article key={rule.id} className={`rule-card${rule.status === 'paused' ? ' paused' : ''}`}>
                     <div className="rule-head">
@@ -3414,30 +3535,18 @@ export default function App() {
                       <span className={directionClassName(rule.direction)}>{rule.direction}</span>
                       <span className={rule.status === 'active' ? 'pill success' : 'pill muted'}>{rule.status}</span>
                       {rule.category ? <span className="pill">{rule.category}</span> : null}
+                      {preview[0] ? (
+                        <span className="pill muted">
+                          Next {formatDateLabel(preview[0].date)} - {formatCurrency(preview[0].amount)}
+                        </span>
+                      ) : null}
                     </div>
-                    {preview.length ? (
-                      <div className="preview-list">
-                        {preview.map((occurrence) => (
-                          <button
-                            key={occurrence.id}
-                            type="button"
-                            className="preview-item"
-                            onClick={() => openOverride(occurrence, rule)}
-                          >
-                            <span>{formatDateLabel(occurrence.date)}</span>
-                            <strong>{formatCurrency(occurrence.amount)}</strong>
-                          </button>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="empty-mini">No upcoming occurrences in the preview window.</div>
-                    )}
                     <div className="card-row-actions">
-                      <button type="button" className="soft-button" onClick={() => editRule(rule)}>
+                      <button type="button" className="soft-button" onClick={() => openRecurringOverrideModal(rule)}>
                         Edit
                       </button>
-                      <button type="button" className="soft-button" onClick={() => openOverride(preview[0] || { ...rule, date: rule.startsOn, recurringRuleId: rule.id }, rule)}>
-                        Override occurrence
+                      <button type="button" className="soft-button" onClick={() => editRule(rule)}>
+                        Edit rule details
                       </button>
                       <button type="button" className="link-button danger" onClick={() => removeRule(rule.id)}>
                         Delete
@@ -3454,6 +3563,7 @@ export default function App() {
             </div>
           </SectionCard>
 
+          {overrideDraft?.__legacyPanel ? (
           <SectionCard
             title="Occurrence overrides"
             kicker="One-off changes that do not touch the base rule"
@@ -3599,6 +3709,7 @@ export default function App() {
               ) : null}
             </div>
           </SectionCard>
+          ) : null}
         </div>
       ) : null}
 
@@ -3812,7 +3923,38 @@ export default function App() {
 
       {hasActiveHousehold && activeView === 'loans' ? (
         <div className="content-grid">
-          <LegacyLoanManager />
+          <div className="entry-mode-toggle loan-mode-toggle app-loan-toggle">
+            <button
+              type="button"
+              className={`soft-button${loanTab === 'manager' ? ' active' : ''}`}
+              onClick={() => setLoanTab('manager')}
+            >
+              Loan Manager
+            </button>
+            <button
+              type="button"
+              className={`soft-button${loanTab === 'payoff' ? ' active' : ''}`}
+              onClick={() => setLoanTab('payoff')}
+            >
+              Payoff Calculator
+            </button>
+          </div>
+          {loanTab === 'manager' ? (
+            <LegacyLoanManager />
+          ) : (
+            <DebtPayoffCalculator
+              rows={debtPayoffRows}
+              setRows={setDebtPayoffRows}
+              loading={debtPayoffLoading}
+              onReloadLoans={refreshDebtPayoffLoanRows}
+              extras={debtPayoffExtras}
+              setExtras={setDebtPayoffExtras}
+              fixedTotalPayment={debtPayoffFixedTotal}
+              setFixedTotalPayment={setDebtPayoffFixedTotal}
+              method={debtPayoffMethod}
+              setMethod={setDebtPayoffMethod}
+            />
+          )}
         </div>
       ) : null}
 
@@ -5056,6 +5198,92 @@ export default function App() {
                 onClick={() => setArchiveConfirm({ open: false, checked: false, householdId: null, householdName: '' })}
                 disabled={settingsBusy}
               >
+                Cancel
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
+      {recurringModalRule ? (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="recurring-override-title">
+          <section className="settings-modal panel settings-modal-wide">
+            <div className="panel-head">
+              <div>
+                <div className="kicker">Recurring Overrides</div>
+                <h2 id="recurring-override-title">{recurringModalRule.title}</h2>
+                <p className="auth-copy">{describeRecurringRule(recurringModalRule, accountMap)}</p>
+              </div>
+              <button type="button" className="soft-button" onClick={closeRecurringOverrideModal}>
+                Close
+              </button>
+            </div>
+            <div className="table-wrap">
+              <table className="data-table recurring-override-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Base amount</th>
+                    <th>Override amount</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {recurringOverrideRows.map((row) => {
+                    const changed = Math.abs(parseCurrencyInput(row.amount) - parseCurrencyInput(row.originalAmount)) >= 0.005;
+                    return (
+                      <tr key={row.rowId}>
+                        <td>
+                          <div className="table-primary">{formatDateLabel(row.occurrenceDate)}</div>
+                          {row.overrideId ? <div className="table-secondary">Saved override</div> : null}
+                        </td>
+                        <td>{formatCurrency(parseCurrencyInput(row.originalAmount))}</td>
+                        <td>
+                          <input
+                            value={row.amount}
+                            onChange={(event) => updateRecurringOverrideRow(row.rowId, { amount: event.target.value })}
+                            onBlur={() => updateRecurringOverrideRow(row.rowId, { amount: formatCurrencyInput(row.amount) })}
+                          />
+                        </td>
+                        <td>
+                          <span className={changed ? 'pill warning' : 'pill muted'}>
+                            {changed ? 'override' : 'base rule'}
+                          </span>
+                        </td>
+                        <td>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => updateRecurringOverrideRow(row.rowId, { amount: row.originalAmount })}
+                          >
+                            Reset
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {!recurringOverrideRows.length ? (
+                <div className="empty-state">No future transactions are available for this rule.</div>
+              ) : null}
+            </div>
+            <div className="form-actions">
+              <button type="button" className="primary-button" onClick={saveRecurringOverrideRows} disabled={busy || !recurringOverrideRows.length}>
+                Save overrides
+              </button>
+              <button
+                type="button"
+                className="soft-button"
+                onClick={() => {
+                  closeRecurringOverrideModal();
+                  editRule(recurringModalRule);
+                }}
+              >
+                Edit rule details
+              </button>
+              <button type="button" className="soft-button" onClick={closeRecurringOverrideModal}>
                 Cancel
               </button>
             </div>

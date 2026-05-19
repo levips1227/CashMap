@@ -75,4 +75,5 @@ export const budgetApi = {
   deleteLoanPayment: (id) => apiRequest(`/api/loan-payments/${id}`, { method: 'DELETE' }),
   createLoanDraw: (payload) => apiRequest('/api/loan-draws', { method: 'POST', body: payload }),
   deleteLoanDraw: (id) => apiRequest(`/api/loan-draws/${id}`, { method: 'DELETE' }),
+  getLegacyLoanState: () => apiRequest('/api/legacy-loans/state'),
 };

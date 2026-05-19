@@ -1032,6 +1032,68 @@ code {
   flex-wrap: wrap;
 }
 
+.app-loan-toggle {
+  margin-bottom: 0.25rem;
+}
+
+.debt-payoff-workspace {
+  display: grid;
+  gap: 1rem;
+}
+
+.debt-payoff-controls {
+  margin-bottom: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+
+.debt-payoff-summary {
+  margin-top: 1rem;
+}
+
+.debt-payoff-table {
+  min-width: 1040px;
+}
+
+.debt-payoff-table input {
+  min-width: 120px;
+}
+
+.recurring-override-table {
+  min-width: 760px;
+}
+
+.recurring-override-table input {
+  max-width: 180px;
+}
+
+.segmented-choice {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+  min-height: 48px;
+}
+
+.segmented-choice .soft-button {
+  min-width: 72px;
+  padding: 0.62rem 0.9rem;
+}
+
+.debt-results-copy {
+  margin-top: 1rem;
+  line-height: 1.55;
+}
+
+.payment-schedule-list {
+  display: grid;
+  gap: 0.2rem;
+  max-width: 340px;
+}
+
+.payment-schedule-list span {
+  color: var(--ink-2);
+  font-size: 0.92rem;
+}
+
 .loan-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
