@@ -1,4 +1,4 @@
-import { startTransition, useEffect, useMemo, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   CartesianGrid,
   Legend,
@@ -45,6 +45,9 @@ const VIEW_OPTIONS = [
 ];
 
 const PASSWORD_MIN_LENGTH = 8;
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const REMEMBERED_USERNAME_KEY = 'cashmap.rememberedUsername';
+const DEBT_PAYOFF_STORAGE_VERSION = 1;
 const USER_ROLES = ['Admin', 'Standard User'];
 const HOUSEHOLD_ROLES = ['Owner', 'Member', 'Viewer'];
 const GENDER_OPTIONS = ['Male', 'Female', 'Nonbinary', 'Other', 'Prefer not to say'];
@@ -102,11 +105,51 @@ function getDefaultProfileDraft(user = null) {
   };
 }
 
+function getDefaultDebtPayoffExtras() {
+  return {
+    monthly: '0',
+    yearly: '0',
+    oneTimeAmount: '0',
+    oneTimeMonth: '1',
+  };
+}
+
+function getDebtPayoffStorageKey(userId, householdId) {
+  if (!userId || !householdId) return '';
+  return `cashmap.debtPayoff.${userId}.${householdId}`;
+}
+
+function loadRememberedUsername() {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(REMEMBERED_USERNAME_KEY) || '';
+}
+
 function clearInviteTokenFromUrl() {
   if (typeof window === 'undefined') return;
   const url = new URL(window.location.href);
   url.searchParams.delete('invite');
   window.history.replaceState({}, '', url.toString());
+}
+
+function loadGoogleIdentityScript() {
+  if (typeof window === 'undefined') return Promise.resolve(false);
+  if (window.google?.accounts?.id) return Promise.resolve(true);
+  return new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-google-identity="true"]');
+    if (existing) {
+      existing.addEventListener('load', () => resolve(true), { once: true });
+      existing.addEventListener('error', reject, { once: true });
+      return;
+    }
+    const script = document.createElement('script');
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.dataset.googleIdentity = 'true';
+    script.onload = () => resolve(true);
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
 }
 
 function getDefaultAccountDraft(lookups = DEFAULT_LOOKUPS) {
@@ -746,8 +789,8 @@ function CategoryPicker({ value, onChange, options, placeholder = 'Select catego
 }
 
 function LoginView({ busy, error, onSubmit }) {
-  const [username, setUsername] = useState('Admin');
-  const [password, setPassword] = useState('change-me-please');
+  const [username, setUsername] = useState(loadRememberedUsername);
+  const [password, setPassword] = useState('');
 
   return (
     <main className="auth-shell">
@@ -791,16 +834,47 @@ function LoginView({ busy, error, onSubmit }) {
 
 void LoginView;
 
-function AuthView({ busy, error, inviteInfo, onLogin, onSignup }) {
+function AuthView({ busy, error, inviteInfo, onLogin, onSignup, onGoogleAuth }) {
   const [mode, setMode] = useState('login');
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(loadRememberedUsername);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(() => Boolean(loadRememberedUsername()));
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
   const [gender, setGender] = useState('Prefer not to say');
   const [annualHouseholdIncome, setAnnualHouseholdIncome] = useState('');
+  const googleButtonRef = useRef(null);
+
+  useEffect(() => {
+    if (!GOOGLE_CLIENT_ID || !googleButtonRef.current) return undefined;
+    let cancelled = false;
+    loadGoogleIdentityScript()
+      .then(() => {
+        if (cancelled || !window.google?.accounts?.id || !googleButtonRef.current) return;
+        window.google.accounts.id.initialize({
+          client_id: GOOGLE_CLIENT_ID,
+          callback: (response) => {
+            if (response?.credential) {
+              onGoogleAuth({ credential: response.credential });
+            }
+          },
+        });
+        googleButtonRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(googleButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          text: mode === 'signup' ? 'signup_with' : 'signin_with',
+          shape: 'pill',
+          width: Math.min(420, googleButtonRef.current.clientWidth || 320),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [mode, onGoogleAuth]);
 
   return (
     <main className="auth-shell">
@@ -830,7 +904,7 @@ function AuthView({ busy, error, inviteInfo, onLogin, onSignup }) {
         </p>
         <form
           className="auth-form"
-          autoComplete="off"
+          autoComplete="on"
           onSubmit={(event) => {
             event.preventDefault();
             if (mode === 'signup') {
@@ -846,44 +920,43 @@ function AuthView({ busy, error, inviteInfo, onLogin, onSignup }) {
               });
               return;
             }
+            if (rememberMe) {
+              window.localStorage.setItem(REMEMBERED_USERNAME_KEY, username);
+            } else {
+              window.localStorage.removeItem(REMEMBERED_USERNAME_KEY);
+            }
             onLogin({ username, password });
           }}
         >
-          <input
-            type="text"
-            name="cashmap-shadow-username"
-            autoComplete="username"
-            tabIndex={-1}
-            aria-hidden="true"
-            className="hidden-autofill-field"
-          />
-          <input
-            type="password"
-            name="cashmap-shadow-password"
-            autoComplete="current-password"
-            tabIndex={-1}
-            aria-hidden="true"
-            className="hidden-autofill-field"
-          />
           <Field label="Username">
             <input
-              name={mode === 'signup' ? 'signup-username' : 'login-username'}
+              name="username"
               value={username}
               onChange={(event) => setUsername(event.target.value)}
-              autoComplete={mode === 'signup' ? 'username' : 'off'}
+              autoComplete="username"
               required
             />
           </Field>
           <Field label="Password">
             <input
-              name={mode === 'signup' ? 'signup-password' : 'login-password'}
+              name="password"
               type="password"
               value={password}
               onChange={(event) => setPassword(event.target.value)}
-              autoComplete={mode === 'signup' ? 'new-password' : 'off'}
+              autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
               required
             />
           </Field>
+          {mode === 'login' ? (
+            <label className="inline-checkbox remember-login">
+              <input
+                type="checkbox"
+                checked={rememberMe}
+                onChange={(event) => setRememberMe(event.target.checked)}
+              />
+              <span>Remember me on this device</span>
+            </label>
+          ) : null}
           {mode === 'signup' ? (
             <>
               <Field label="First name">
@@ -939,6 +1012,12 @@ function AuthView({ busy, error, inviteInfo, onLogin, onSignup }) {
             {busy ? 'Working…' : mode === 'signup' ? 'Create account' : 'Open budget workspace'}
           </button>
         </form>
+        {GOOGLE_CLIENT_ID ? (
+          <div className="google-auth-area">
+            <div className="auth-divider"><span>or</span></div>
+            <div ref={googleButtonRef} className="google-auth-button" />
+          </div>
+        ) : null}
       </section>
     </main>
   );
@@ -983,14 +1062,11 @@ export default function App() {
   const [loanTab, setLoanTab] = useState('manager');
   const [debtPayoffRows, setDebtPayoffRows] = useState([]);
   const [debtPayoffLoading, setDebtPayoffLoading] = useState(false);
-  const [debtPayoffExtras, setDebtPayoffExtras] = useState({
-    monthly: '0',
-    yearly: '0',
-    oneTimeAmount: '0',
-    oneTimeMonth: '1',
-  });
+  const [debtPayoffExtras, setDebtPayoffExtras] = useState(getDefaultDebtPayoffExtras);
   const [debtPayoffFixedTotal, setDebtPayoffFixedTotal] = useState(true);
   const [debtPayoffMethod, setDebtPayoffMethod] = useState('avalanche');
+  const [debtPayoffStorageReady, setDebtPayoffStorageReady] = useState(false);
+  const debtPayoffStorageKeyRef = useRef('');
   const [budgetMonth, setBudgetMonth] = useState(getMonthKey(getTodayKey()));
   const [budgetPlannerRows, setBudgetPlannerRows] = useState([]);
   const [budgetPlannerCategory, setBudgetPlannerCategory] = useState('');
@@ -1035,6 +1111,51 @@ export default function App() {
   const settingsHouseholdId = settingsTab === 'admin-households' ? adminSelectedHouseholdId : activeHousehold?.id;
   const canManageActiveHousehold = Boolean(activeHousehold?.canManage);
   const hasActiveHousehold = Boolean(activeHousehold?.id);
+
+  useEffect(() => {
+    const storageKey = getDebtPayoffStorageKey(session.user?.id, activeHousehold?.id);
+    debtPayoffStorageKeyRef.current = storageKey;
+    setDebtPayoffStorageReady(false);
+
+    if (!storageKey || typeof window === 'undefined') {
+      setDebtPayoffRows([]);
+      setDebtPayoffExtras(getDefaultDebtPayoffExtras());
+      setDebtPayoffFixedTotal(true);
+      setDebtPayoffMethod('avalanche');
+      return;
+    }
+
+    try {
+      const saved = JSON.parse(window.localStorage.getItem(storageKey) || 'null');
+      setDebtPayoffRows(Array.isArray(saved?.rows) ? saved.rows : []);
+      setDebtPayoffExtras({
+        ...getDefaultDebtPayoffExtras(),
+        ...(saved?.extras && typeof saved.extras === 'object' ? saved.extras : {}),
+      });
+      setDebtPayoffFixedTotal(typeof saved?.fixedTotalPayment === 'boolean' ? saved.fixedTotalPayment : true);
+      setDebtPayoffMethod(saved?.method || 'avalanche');
+    } catch {
+      setDebtPayoffRows([]);
+      setDebtPayoffExtras(getDefaultDebtPayoffExtras());
+      setDebtPayoffFixedTotal(true);
+      setDebtPayoffMethod('avalanche');
+    } finally {
+      setDebtPayoffStorageReady(true);
+    }
+  }, [session.user?.id, activeHousehold?.id]);
+
+  useEffect(() => {
+    const storageKey = debtPayoffStorageKeyRef.current;
+    if (!debtPayoffStorageReady || !storageKey || typeof window === 'undefined') return;
+    window.localStorage.setItem(storageKey, JSON.stringify({
+      version: DEBT_PAYOFF_STORAGE_VERSION,
+      rows: debtPayoffRows,
+      extras: debtPayoffExtras,
+      fixedTotalPayment: debtPayoffFixedTotal,
+      method: debtPayoffMethod,
+    }));
+  }, [debtPayoffRows, debtPayoffExtras, debtPayoffFixedTotal, debtPayoffMethod, debtPayoffStorageReady]);
+
   const filteredAdminHouseholds = useMemo(() => {
     const query = adminHouseholdSearch.trim().toLowerCase();
     const filtered = query
@@ -1366,6 +1487,26 @@ export default function App() {
     }
   }
 
+  async function handleGoogleAuth({ credential }) {
+    setBusy(true);
+    try {
+      await budgetApi.googleAuth({
+        credential,
+        inviteToken: inviteToken || undefined,
+      });
+      if (inviteToken) {
+        clearInviteTokenFromUrl();
+        setInviteToken('');
+        setInviteInfo(null);
+      }
+      await loadWorkspace();
+    } catch (error) {
+      setBanner({ type: 'error', message: error.message || 'Google sign-in failed.' });
+    } finally {
+      setBusy(false);
+    }
+  }
+
   useEffect(() => {
     if (!settingsOpen || settingsTab !== 'households') return;
     refreshActiveHouseholdMembers().catch((error) => {
@@ -1389,11 +1530,11 @@ export default function App() {
   }, [activeView, hasActiveHousehold]);
 
   useEffect(() => {
-    if (!hasActiveHousehold || activeView !== 'loans' || loanTab !== 'payoff') return;
+    if (!hasActiveHousehold || activeView !== 'loans' || loanTab !== 'payoff' || !debtPayoffStorageReady) return;
     refreshDebtPayoffLoanRows().catch((error) => {
       setBanner({ type: 'error', message: error.message || 'Could not refresh loan payoff rows.' });
     });
-  }, [activeView, loanTab, hasActiveHousehold]);
+  }, [activeView, loanTab, hasActiveHousehold, debtPayoffStorageReady]);
 
   async function handleLogout() {
     setBusy(true);
@@ -2621,6 +2762,7 @@ export default function App() {
         inviteInfo={inviteInfo}
         onLogin={handleLogin}
         onSignup={handleSignup}
+        onGoogleAuth={handleGoogleAuth}
       />
     );
   }

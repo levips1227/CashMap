@@ -2,6 +2,7 @@ import express from 'express';
 import cookieParser from 'cookie-parser';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { OAuth2Client } from 'google-auth-library';
 import jwt from 'jsonwebtoken';
 import dotenv from 'dotenv';
 import fs from 'fs';
@@ -52,6 +53,8 @@ import {
   listUsers,
   getUserById,
   getUserByUsernameLower,
+  getUserByGoogleSub,
+  getUserByEmailLower,
   createUser,
   updateUser,
   setUserActiveHousehold,
@@ -95,6 +98,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const DB_PATH = process.env.DB_PATH || path.join(__dirname, '..', 'data', 'budget-app.json');
 const JWT_SECRET = process.env.JWT_SECRET || '';
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID || '';
 const FALLBACK_JWT_SECRET = JWT_SECRET || 'dev-insecure-change-me';
 const NODE_ENV = process.env.NODE_ENV || 'development';
 const PASSWORD_MIN_LENGTH = 8;
@@ -119,6 +123,7 @@ app.use(express.json({ limit: '2mb' }));
 app.use(cookieParser());
 
 const db = initDb(DB_PATH);
+const googleOAuthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
 function normalizeUsername(name) {
   return (name || '').trim().replace(/\s+/g, ' ');
@@ -133,6 +138,8 @@ function sanitizeUser(user) {
     phone: user.phone || '',
     gender: user.gender || 'Prefer not to say',
     annualHouseholdIncome: user.annual_household_income || '',
+    email: user.email || '',
+    googleLinked: !!user.google_sub,
     role: user.role,
     disabled: !!user.disabled,
     createdAt: user.created_at,
@@ -713,6 +720,74 @@ function createOwnedHouseholdForUser(user, name = 'My Household') {
   return household;
 }
 
+function buildUniqueUsername(seed) {
+  const normalizedSeed = normalizeUsername(seed || 'Google User')
+    .replace(/[^\w.@+-]+/g, '')
+    .slice(0, 40) || 'GoogleUser';
+  let candidate = normalizedSeed;
+  let suffix = 1;
+  while (getUserByUsernameLower(db, candidate.toLowerCase())) {
+    suffix += 1;
+    candidate = `${normalizedSeed}${suffix}`;
+  }
+  return candidate;
+}
+
+function applyInviteToUser(user, inviteToken) {
+  const token = normalizeText(inviteToken);
+  if (!token) return user;
+  const invite = getHouseholdInviteByTokenHash(db, hashInviteToken(token));
+  assert(invite, 'Invite link was not found.');
+  assert(!invite.usedAt, 'Invite link has already been used.');
+  assert(invite.expiresAt >= new Date().toISOString(), 'Invite link has expired.');
+  const existingMembership = getHouseholdMembership(db, invite.householdId, user.id);
+  if (existingMembership) {
+    updateHouseholdMember(db, existingMembership.id, {
+      ...existingMembership,
+      role: invite.role,
+    });
+  } else {
+    createHouseholdMember(db, {
+      householdId: invite.householdId,
+      userId: user.id,
+      role: invite.role,
+    });
+  }
+  updateHouseholdInvite(db, invite.id, {
+    ...invite,
+    usedAt: new Date().toISOString(),
+    usedByUserId: user.id,
+  });
+  return setUserActiveHousehold(db, { id: user.id, householdId: invite.householdId });
+}
+
+function ensureUserHasHousehold(user) {
+  const memberships = listHouseholdMembershipsForUser(db, user.id);
+  if (!memberships.length) {
+    createOwnedHouseholdForUser(user, 'My Household');
+    return getUserById(db, user.id);
+  }
+  return user;
+}
+
+async function verifyGoogleCredential(credential) {
+  assert(googleOAuthClient, 'Google sign-in is not configured.');
+  const ticket = await googleOAuthClient.verifyIdToken({
+    idToken: normalizeRequiredText(credential, 'Google credential'),
+    audience: GOOGLE_CLIENT_ID,
+  });
+  const payload = ticket.getPayload();
+  assert(payload?.sub, 'Google credential could not be verified.');
+  assert(payload.email_verified, 'Google email must be verified.');
+  return {
+    googleSub: payload.sub,
+    email: String(payload.email || '').trim(),
+    firstName: String(payload.given_name || '').trim(),
+    lastName: String(payload.family_name || '').trim(),
+    name: String(payload.name || '').trim(),
+  };
+}
+
 function migrateLegacyDataIntoHouseholds() {
   const existingHouseholds = listHouseholds(db);
   const recordsNeedMigration = [
@@ -1167,6 +1242,9 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || user.disabled) {
     return res.status(401).json({ error: 'Incorrect username or password.' });
   }
+  if (!user.password_hash) {
+    return res.status(401).json({ error: 'This account uses Google sign-in.' });
+  }
   const ok = await bcrypt.compare(password, user.password_hash);
   if (!ok) {
     return res.status(401).json({ error: 'Incorrect username or password.' });
@@ -1208,29 +1286,7 @@ app.post('/api/auth/signup', async (req, res) => {
     });
 
     if (inviteToken) {
-      const invite = getHouseholdInviteByTokenHash(db, hashInviteToken(inviteToken));
-      assert(invite, 'Invite link was not found.');
-      assert(!invite.usedAt, 'Invite link has already been used.');
-      assert(invite.expiresAt >= new Date().toISOString(), 'Invite link has expired.');
-      const existingMembership = getHouseholdMembership(db, invite.householdId, user.id);
-      if (existingMembership) {
-        updateHouseholdMember(db, existingMembership.id, {
-          ...existingMembership,
-          role: invite.role,
-        });
-      } else {
-        createHouseholdMember(db, {
-          householdId: invite.householdId,
-          userId: user.id,
-          role: invite.role,
-        });
-      }
-      updateHouseholdInvite(db, invite.id, {
-        ...invite,
-        usedAt: new Date().toISOString(),
-        usedByUserId: user.id,
-      });
-      user = setUserActiveHousehold(db, { id: user.id, householdId: invite.householdId });
+      user = applyInviteToUser(user, inviteToken);
     } else {
       createOwnedHouseholdForUser(user, 'My Household');
       user = getUserById(db, user.id);
@@ -1239,6 +1295,68 @@ app.post('/api/auth/signup', async (req, res) => {
     setSessionCookie(res, user);
     const resolved = ensureUserActiveHousehold(user);
     return res.status(201).json({ user: sanitizeUser(resolved.user || user) });
+  } catch (error) {
+    return sendError(res, error);
+  }
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  try {
+    const profile = await verifyGoogleCredential(req.body?.credential);
+    const inviteToken = normalizeText(req.body?.inviteToken);
+    const emailLower = profile.email.toLowerCase();
+    let user = getUserByGoogleSub(db, profile.googleSub)
+      || getUserByEmailLower(db, emailLower)
+      || getUserByUsernameLower(db, emailLower);
+
+    if (user?.disabled) {
+      return res.status(401).json({ error: 'This user is disabled.' });
+    }
+
+    if (user) {
+      user = updateUser(db, {
+        id: user.id,
+        username: user.username,
+        usernameLower: user.username_lower,
+        firstName: user.first_name || profile.firstName,
+        lastName: user.last_name || profile.lastName,
+        phone: user.phone || '',
+        gender: user.gender || 'Prefer not to say',
+        annualHouseholdIncome: user.annual_household_income || '',
+        email: user.email || profile.email,
+        googleSub: user.google_sub || profile.googleSub,
+        role: user.role,
+        disabled: user.disabled,
+        activeHouseholdId: user.active_household_id ?? null,
+      });
+    } else {
+      const username = buildUniqueUsername(profile.email || profile.name || 'GoogleUser');
+      user = createUser(db, {
+        username,
+        usernameLower: username.toLowerCase(),
+        passwordHash: null,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        phone: '',
+        gender: 'Prefer not to say',
+        annualHouseholdIncome: '',
+        email: profile.email,
+        googleSub: profile.googleSub,
+        role: 'Standard User',
+        disabled: 0,
+        activeHouseholdId: null,
+      });
+    }
+
+    if (inviteToken) {
+      user = applyInviteToUser(user, inviteToken);
+    } else {
+      user = ensureUserHasHousehold(user);
+    }
+
+    setSessionCookie(res, user);
+    const resolved = ensureUserActiveHousehold(user);
+    return res.json({ user: sanitizeUser(resolved.user || user) });
   } catch (error) {
     return sendError(res, error);
   }

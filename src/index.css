@@ -136,6 +136,48 @@ code {
   margin-top: 1.5rem;
 }
 
+.google-auth-area {
+  display: grid;
+  gap: 0.9rem;
+  margin-top: 1.2rem;
+}
+
+.auth-divider {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 0.75rem;
+  align-items: center;
+  color: var(--ink-3);
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  background: rgba(148, 163, 184, 0.28);
+}
+
+.google-auth-button {
+  min-height: 44px;
+  display: grid;
+  justify-items: center;
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--ink-2);
+  font-weight: 700;
+}
+
+.inline-checkbox input {
+  width: auto;
+  min-height: auto;
+}
+
 .hidden-autofill-field {
   position: absolute;
   width: 1px;

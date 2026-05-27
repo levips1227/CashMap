@@ -28,6 +28,7 @@ export const budgetApi = {
   bootstrap: () => apiRequest('/api/bootstrap'),
   login: (payload) => apiRequest('/api/auth/login', { method: 'POST', body: payload }),
   signup: (payload) => apiRequest('/api/auth/signup', { method: 'POST', body: payload }),
+  googleAuth: (payload) => apiRequest('/api/auth/google', { method: 'POST', body: payload }),
   logout: () => apiRequest('/api/auth/logout', { method: 'POST' }),
   getInvite: (token) => apiRequest(`/api/invites/${encodeURIComponent(token)}`),
   acceptInvite: (token) => apiRequest(`/api/invites/${encodeURIComponent(token)}/accept`, { method: 'POST' }),

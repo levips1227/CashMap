@@ -45,8 +45,8 @@ export default function DebtPayoffCalculator({
     [rows, method, extras, fixedTotalPayment],
   );
   const baseline = useMemo(
-    () => calculateDebtPayoff(rows, method, { monthly: 0, yearly: 0, oneTimeAmount: 0, oneTimeMonth: 1 }, fixedTotalPayment),
-    [rows, method, fixedTotalPayment],
+    () => calculateDebtPayoff(rows, method, { monthly: 0, yearly: 0, oneTimeAmount: 0, oneTimeMonth: 1 }, false),
+    [rows, method],
   );
   const interestSaved = Math.max(0, baseline.totalInterest - payoff.totalInterest);
   const monthlyMinimums = rows.reduce((sum, row) => sum + numericDebtValue(row.minimumPayment), 0);

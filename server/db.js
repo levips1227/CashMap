@@ -130,6 +130,8 @@ export function listUsers(db) {
       phone: user.phone || '',
       gender: user.gender || 'Prefer not to say',
       annualHouseholdIncome: user.annual_household_income || '',
+      email: user.email || '',
+      googleSub: user.google_sub || '',
       role: user.role,
       disabled: !!user.disabled,
       createdAt: user.created_at,
@@ -145,6 +147,16 @@ export function getUserByUsernameLower(db, usernameLower) {
   return requireCollection(db, 'users').find((user) => user.username_lower === usernameLower) || null;
 }
 
+export function getUserByGoogleSub(db, googleSub) {
+  if (!googleSub) return null;
+  return requireCollection(db, 'users').find((user) => user.google_sub === googleSub) || null;
+}
+
+export function getUserByEmailLower(db, emailLower) {
+  if (!emailLower) return null;
+  return requireCollection(db, 'users').find((user) => String(user.email || '').toLowerCase() === emailLower) || null;
+}
+
 export function createUser(db, {
   username,
   usernameLower,
@@ -155,6 +167,8 @@ export function createUser(db, {
   phone = '',
   gender = 'Prefer not to say',
   annualHouseholdIncome = '',
+  email = '',
+  googleSub = '',
   disabled = 0,
   activeHouseholdId = null,
 }) {
@@ -162,12 +176,14 @@ export function createUser(db, {
     id: nextId(db, 'users'),
     username,
     username_lower: usernameLower,
-    password_hash: passwordHash,
+    password_hash: passwordHash || null,
     first_name: firstName,
     last_name: lastName,
     phone,
     gender,
     annual_household_income: annualHouseholdIncome,
+    email,
+    google_sub: googleSub,
     role,
     disabled: disabled ? 1 : 0,
     created_at: nowIso(),
@@ -187,6 +203,8 @@ export function updateUser(db, {
   phone,
   gender,
   annualHouseholdIncome,
+  email,
+  googleSub,
   role,
   disabled,
   activeHouseholdId,
@@ -200,6 +218,8 @@ export function updateUser(db, {
   if (phone !== undefined) user.phone = phone;
   if (gender !== undefined) user.gender = gender;
   if (annualHouseholdIncome !== undefined) user.annual_household_income = annualHouseholdIncome;
+  if (email !== undefined) user.email = email;
+  if (googleSub !== undefined) user.google_sub = googleSub;
   user.role = role;
   user.disabled = disabled ? 1 : 0;
   if (activeHouseholdId !== undefined) {
