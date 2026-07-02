@@ -21,17 +21,41 @@ if (typeof window !== 'undefined') {
 
 export default function InstallAppButton() {
   const [installPrompt, setInstallPrompt] = useState(savedInstallPrompt);
+  const [installed, setInstalled] = useState(() => (
+    window.matchMedia('(display-mode: standalone)').matches
+    || window.navigator.standalone === true
+  ));
 
   useEffect(() => {
     promptSubscribers.add(setInstallPrompt);
     setInstallPrompt(savedInstallPrompt);
-    return () => promptSubscribers.delete(setInstallPrompt);
+    const standaloneQuery = window.matchMedia('(display-mode: standalone)');
+    const updateInstalledState = () => {
+      setInstalled(standaloneQuery.matches || window.navigator.standalone === true);
+    };
+    standaloneQuery.addEventListener('change', updateInstalledState);
+    window.addEventListener('appinstalled', updateInstalledState);
+    return () => {
+      promptSubscribers.delete(setInstallPrompt);
+      standaloneQuery.removeEventListener('change', updateInstalledState);
+      window.removeEventListener('appinstalled', updateInstalledState);
+    };
   }, []);
 
-  if (!installPrompt) return null;
+  if (installed) return null;
 
   async function handleInstallClick() {
     const promptEvent = installPrompt;
+    if (!promptEvent) {
+      const isIos = /iPad|iPhone|iPod/.test(window.navigator.userAgent);
+      window.alert(
+        isIos
+          ? 'To install CashMap, open the Share menu and choose Add to Home Screen.'
+          : 'Use your browser menu and choose Install CashMap or Install app. If that option is missing, confirm you are using the HTTPS address.',
+      );
+      return;
+    }
+
     publishInstallPrompt(null);
 
     try {
@@ -44,12 +68,15 @@ export default function InstallAppButton() {
   }
 
   return (
-    <button
-      type="button"
-      onClick={handleInstallClick}
-      className="soft-button install-app-button"
+    <a
+      href="#install-cashmap"
+      onClick={(event) => {
+        event.preventDefault();
+        handleInstallClick();
+      }}
+      className="install-app-link"
     >
       Install CashMap
-    </button>
+    </a>
   );
 }

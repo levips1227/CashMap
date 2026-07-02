@@ -34,6 +34,7 @@ import {
   mergeLoanDebtRows,
 } from './debtPayoffUtils';
 import LegacyLoanManager from './LegacyLoanManager';
+import packageInfo from '../package.json';
 
 const VIEW_OPTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -47,6 +48,7 @@ const VIEW_OPTIONS = [
 
 const PASSWORD_MIN_LENGTH = 8;
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+const APP_VERSION = packageInfo.version;
 const REMEMBERED_USERNAME_KEY = 'cashmap.rememberedUsername';
 const DEBT_PAYOFF_STORAGE_VERSION = 1;
 const USER_ROLES = ['Admin', 'Standard User'];
@@ -1020,7 +1022,20 @@ function AuthView({ busy, error, inviteInfo, onLogin, onSignup, onGoogleAuth }) 
           </div>
         ) : null}
       </section>
+      <AppFooter />
     </main>
+  );
+}
+
+function AppFooter() {
+  return (
+    <footer className="site-footer">
+      <span>&copy; {new Date().getFullYear()} CashMap. All rights reserved.</span>
+      <span className="site-footer-links">
+        <InstallAppButton />
+        <span>Version {APP_VERSION}</span>
+      </span>
+    </footer>
   );
 }
 
@@ -2787,7 +2802,6 @@ export default function App() {
           </div>
         </div>
         <div className="hero-actions">
-          <InstallAppButton />
           <div className="user-chip">
             {data.households.length ? (
               <select
@@ -4462,6 +4476,8 @@ export default function App() {
           </SectionCard>
         </div>
       ) : null}
+
+      <AppFooter />
 
       {settingsOpen ? (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="settings-title">
