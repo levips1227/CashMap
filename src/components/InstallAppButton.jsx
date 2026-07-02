@@ -10,7 +10,6 @@ function publishInstallPrompt(prompt) {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeinstallprompt', (event) => {
-    event.preventDefault();
     publishInstallPrompt(event);
   });
 

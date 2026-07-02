@@ -537,7 +537,7 @@ function runSelfTests() {
     console.warn('Self-tests encountered an error (non-fatal):', e);
   }
 }
-if (typeof window !== 'undefined') runSelfTests();
+if (import.meta.env.DEV && typeof window !== 'undefined') runSelfTests();
 
 // =============================
 // UI Component
