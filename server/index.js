@@ -2311,8 +2311,16 @@ app.delete('/api/users/:id', requireAdmin, (req, res) => {
 
 const distPath = path.join(__dirname, '..', 'dist');
 if (fs.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders(res, filePath) {
+      const fileName = path.basename(filePath);
+      if (fileName === 'index.html' || fileName === 'sw.js' || fileName === 'manifest.webmanifest') {
+        res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
+      }
+    },
+  }));
   app.get('*', (req, res) => {
+    res.setHeader('Cache-Control', 'no-cache, max-age=0, must-revalidate');
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
