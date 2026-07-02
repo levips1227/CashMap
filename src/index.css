@@ -233,6 +233,11 @@ code {
   justify-items: end;
 }
 
+.install-app-button {
+  border-color: rgba(21, 94, 239, 0.28);
+  box-shadow: 0 10px 24px rgba(21, 94, 239, 0.14);
+}
+
 .user-chip {
   display: flex;
   align-items: center;

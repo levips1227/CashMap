@@ -27,6 +27,7 @@ import {
   getTodayKey,
 } from './budgetEngine';
 import DebtPayoffCalculator from './DebtPayoffCalculator';
+import InstallAppButton from './components/InstallAppButton';
 import {
   buildLoanDebtRows,
   createBlankDebtRow,
@@ -2786,6 +2787,7 @@ export default function App() {
           </div>
         </div>
         <div className="hero-actions">
+          <InstallAppButton />
           <div className="user-chip">
             {data.households.length ? (
               <select
