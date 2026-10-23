@@ -162,6 +162,32 @@ Confirm the correct npm path with `command -v npm` before changing `ExecStart`.
 
 ## Data And Backups
 
+### Complete local Windows backup and restore
+
+Stop this project's development servers (`Ctrl+C` in the `dev:full` terminal) before backing up or restoring. From the project directory, run:
+
+```powershell
+python scripts/projectBackup.py backup
+```
+
+This creates a timestamped ZIP in the sibling `CashMap-backups` directory. It includes every project file, including hidden/ignored files, `.git`, `.env`, `data`, `dist`, and `node_modules`. SHA-256 checks verify the archive and confirm source files did not change during backup. Wait for `VERIFIED` before proceeding. Keep the ZIP private: it contains credentials and financial data. This covers the local project directory; it does not back up the Oracle server, global Node/Python installations, or data configured outside the project. External symbolic links cause an error rather than being silently omitted.
+
+Keep a copy of `scripts/projectBackup.py` beside the archive so it remains available if the project is unavailable. To restore, stop the app and use the helper with the actual archive filename:
+
+```powershell
+python ..\CashMap-backups\projectBackup.py restore ..\CashMap-backups\CashMap-YYYYMMDD-HHMMSS.zip --target "P:\Codex\CashMap-restored"
+```
+
+The destination must be empty or nonexistent. Every restored file is verified. Open the restored folder to use it, or rename the existing project folder and put the restored folder in its place while servers and editors are closed. The old folder is preserved for rollback. Use the same Node/npm versions recorded in the ZIP's `manifest.json`; installed native dependencies are specific to the operating system and Node version. On another platform, run `npm ci` from the restored lockfile instead of using the backed-up `node_modules`.
+
+To check an archive without restoring:
+
+```powershell
+python ..\CashMap-backups\projectBackup.py verify ..\CashMap-backups\CashMap-YYYYMMDD-HHMMSS.zip
+```
+
+Dependency maintenance: run `npm.cmd audit fix` locally, then `npm.cmd audit`, `npm.cmd run lint`, `npm.cmd run build`, `node scripts/testLoanReports.mjs`, `node scripts/testMobileLedger.mjs`, and `node scripts/testServerSmoke.mjs`. The server smoke check uses disposable data and verifies production startup, frontend serving, health, login rejection, successful login, and session authentication. Review and commit the lockfile before deploying with `npm ci`; avoid fixing dependencies directly on production.
+
 All users, households, transactions, budgets, reconciliations, and loan data are stored in:
 
 ```text

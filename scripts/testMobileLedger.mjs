@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { createServer } from 'vite';
 
 // Render the actual component through Vite, using representative ledger records.
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' });
+const server = await createServer({ server: { middlewareMode: true }, appType: 'custom', optimizeDeps: { noDiscovery: true, include: [] } });
 try {
   const { default: Ledger } = await server.ssrLoadModule('/src/components/MobileTransactionLedger.jsx');
   const base = { date: '2026-10-23', amount: 42, accountBalanceAfter: 0, totalBalanceAfter: 125, status: 'actual', direction: 'expense', account: { name: 'Checking' } };
