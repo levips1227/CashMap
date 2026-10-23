@@ -1,7 +1,7 @@
 {
   "name": "budget-projection-app",
   "private": true,
-  "version": "1.9.2",
+  "version": "1.9.3",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -22,6 +22,8 @@
     "express": "^4.22.2",
     "google-auth-library": "^10.9.0",
     "jsonwebtoken": "^9.0.3",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.9",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "recharts": "^3.2.1",

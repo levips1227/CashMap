@@ -2,6 +2,23 @@
 
 CashMap is a personal finance web application for cash-flow projections, transactions, recurring payments, budgets, account reconciliation, household sharing, and loan management.
 
+## Loan Manager Reports
+
+In **Loans → Loan Manager → Reports**, choose Monthly Statement, Interest Report, or Principal & Balance Report. The dashboard retains the statement preview and shows summary cards and a per-loan table for period reports. **Download PDF** saves a standalone report directly, without opening the browser print dialog or including the application navigation. PDF generation is imported with the reports dashboard to avoid click-time module loading failures.
+
+- Monthly statements use the loan selected in the loan list and the chosen statement month.
+- Interest and principal reports support one, several, or all loans via borrower/loan checkboxes, with year to date, last 12 months, calendar years, and custom dates. Both date boundaries are inclusive and apply to installment due dates for scheduled payments. Principal-only extras, draws, and originations use actual dates. Last 12 months ends today and starts the day after the same date last year (with leap-day handling).
+- Interest paid and principal paid use recorded payment portions, excluding projections and escrow. The existing servicing engine identifies the installment each scheduled payment satisfies; this includes split, early, and late payments. For example, an October 1 installment paid September 30 is included in October. Report filtering, summaries, monthly breakdowns, and balances all use this applied-period basis. Activity lists both paid and applied dates. Principal-only extras keep their actual dates. Loans without a usable term/schedule fall back to recorded dates. Periods with no payments show zero.
+- Net principal change equals new borrowing (original disbursements and draws) minus principal repaid. Negative change means debt decreased. Opening balance is immediately before the range and closing balance includes the final day, both on the applied-period basis (these can differ from posting-date balances). Adjustments are included when entered as draws or principal payment entries; there is no separate adjustment ledger. Missing origination dates are flagged because historical original balances cannot be assigned reliably.
+- PDFs use the proven jsPDF/AutoTable direct-download generator, with selectable text, neutral statement-style tables, automatic pagination, and two-column statement information panels. No screenshot capture is used. The monthly statement preview retains its existing layout; the PDF recreates those sections in a print layout rather than capturing browser pixels. Period reports retain applied-payment dates and use three separate months per row, with each month showing its interest and principal totals (12 months occupy four rows). Principal/balance details remain in the loan summary and activity sections.
+
+
+Local development: run `npm run dev:full`, then open `http://localhost:5173/` (API on port 4000). Focused report verification: `node scripts/testLoanReports.mjs`; production verification: `npm run build`.
+
+### Report changes — October 23, 2026
+
+Fixed Loan Manager report generation calling `window.print()`. Added direct PDF downloads and a reports dashboard. Follow-up: PDF downloads now capture the preview document itself using browser-native SVG capture (html-to-image) and jsPDF, replacing the separate PDF template so the statement layout stays consistent. Added multi-loan checkboxes with borrower, loan, servicer, and property details; enriched period reports with statement-style sections, monthly totals, and transaction activity. Historical balances are reconstructed from recorded activity. PDF follow-up: replaced the failing CSS capture path, removed manual color/grid conversion, and render one page at a time to avoid oversized canvases. Export errors now include their underlying reason. Monthly breakdowns now follow servicing installment assignments and use a compact three-column layout. See [CHANGELOG.md](CHANGELOG.md) for details.
+
 ## Runtime Requirements
 
 - Node.js `20.19+` or `22.12+`
@@ -266,3 +283,15 @@ npm version major --no-git-tag-version
 
 Run only the one command matching the intended release.
 
+
+### PDF downloader restoration
+
+Restored jsPDF/AutoTable after capture-based export failures and removed the click-time dynamic import. Monthly breakdowns now use the requested three-column row format, replacing month cards. See [CHANGELOG.md](CHANGELOG.md).
+
+### Report layout refinements
+
+Monthly statement PDFs use compact account lines, subtotal/total separators, bold payment totals, and horizontal table rules without internal vertical borders, following the supplied statement reference. Period-report previews and PDFs share a three-months-across breakdown; a full year uses four rows. Recorded activity omits the applied-date display and uses compact rows; installment assignment calculations are unchanged.
+
+### Loan date and report identification updates
+
+Displayed Loan Manager dates and PDF dates use MM-DD-YYYY. Stored values and native date controls retain ISO dates for calculation and browser compatibility; monthly summaries keep their month/year labels. Interest Report and Principal & Balance Report show an explicit Report Period, the number of loans selected, and one identification row per loan (borrower, loan ID, interest rate, origination, scheduled maturity, and period-end outstanding principal). Monthly Statement retains its statement header.

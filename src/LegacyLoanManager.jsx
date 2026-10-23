@@ -1,5 +1,7 @@
 ﻿/* eslint-disable */
 import React from 'react';
+import LoanReportsDashboard from './LoanReportsDashboard';
+import { formatLoanDate } from './loanReports';
 import {
   LineChart,
   Line,
@@ -543,7 +545,7 @@ if (import.meta.env.DEV && typeof window !== 'undefined') runSelfTests();
 // UI Component
 // =============================
 export default function LoanManagerMock() {
-  const fmt = (d) => toISODate(d);
+  const fmt = formatLoanDate;
   const money = (n) => (n ?? 0).toLocaleString(undefined, { style: 'currency', currency: 'USD' });
 
   // --- Auth + session ---
@@ -562,7 +564,6 @@ export default function LoanManagerMock() {
   const inlinePaymentId = `${uiId}-inline-payment`;
   const drawId = `${uiId}-draw`;
   const calcId = `${uiId}-calc`;
-  const reportId = `${uiId}-report`;
   const resetId = `${uiId}-reset`;
 
   // --- Settings panel ---
@@ -746,7 +747,6 @@ export default function LoanManagerMock() {
   const [loanMenuId, setLoanMenuId] = React.useState(null);
   const [mode, setMode] = React.useState('details'); // 'details' | 'calc' | 'reports'
   const [reportMonth, setReportMonth] = React.useState(() => toISODate(new Date()).slice(0, 7));
-  const [reportSelections, setReportSelections] = React.useState({ statement: true });
   const [adminOpen, setAdminOpen] = React.useState(false);
 
   function handleAuthFailure(err) {
@@ -1738,12 +1738,6 @@ export default function LoanManagerMock() {
     };
   }, [selected, reportMonth, loanPaymentsAsc, draws]);
 
-  const canGenerateReports = !!reportData && Object.values(reportSelections).some(Boolean);
-  function handleGenerateReports() {
-    if (!canGenerateReports) return;
-    window.print();
-  }
-
   if (!authReady) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 text-gray-600">
@@ -2513,9 +2507,9 @@ export default function LoanManagerMock() {
                 {/* Use standard amortization schedule for chart to keep it simple and predictable */}
                 <LineChart data={calcProjection?.timeline || []} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
                           <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis dataKey="date" hide={false} tick={{ fontSize: 10 }} />
+                          <XAxis dataKey="date" tickFormatter={fmt} hide={false} tick={{ fontSize: 10 }} />
                           <YAxis tick={{ fontSize: 10 }} />
-                          <Tooltip />
+                          <Tooltip labelFormatter={fmt} />
                           <Legend />
                           <Line type="monotone" dataKey="balance" name="Balance" stroke="#8884d8" dot={false} />
                           <Line type="monotone" dataKey="principalPaid" name="Principal Paid (Cumulative)" stroke="#82ca9d" dot={false} />
@@ -2578,54 +2572,9 @@ export default function LoanManagerMock() {
           ) : (
             // ================= REPORTS VIEW =================
             <>
-              <div className="rounded-2xl bg-white shadow-sm border">
-                <div className="px-4 py-3 border-b">
-                  <div className="font-semibold">Reports</div>
-                </div>
-                <div className="p-4 space-y-4 no-print">
-                  <div className="text-sm text-gray-600">Select report(s) and month, then click Generate.</div>
-                  <div className="grid md:grid-cols-3 gap-3 text-sm">
-                    <div>
-                      <label htmlFor={`${reportId}-month`} className="block text-xs text-gray-600 mb-1">Statement month</label>
-                      <input
-                        type="month"
-                        id={`${reportId}-month`}
-                        name="reportMonth"
-                        value={reportMonth}
-                        onChange={(e) => setReportMonth(e.target.value)}
-                        className="rounded-lg border px-3 py-2 text-sm w-full"
-                      />
-                    </div>
-                    <div className="md:col-span-2">
-                      <div className="text-xs text-gray-600 mb-1">Reports</div>
-                      <label className="flex items-center gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          id={`${reportId}-statement`}
-                          name="reportStatement"
-                          checked={reportSelections.statement}
-                          onChange={(e) => setReportSelections((prev) => ({ ...prev, statement: e.target.checked }))}
-                        />
-                        <span>Monthly Mortgage Statement</span>
-                      </label>
-                    </div>
-                  </div>
-                  {!reportData && (
-                    <div className="text-xs text-gray-500">Select a month to enable statement generation.</div>
-                  )}
-                  <div className="flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleGenerateReports}
-                      disabled={!canGenerateReports}
-                      className="rounded-lg bg-violet-600 text-white px-4 py-2 text-sm shadow hover:bg-violet-700 disabled:opacity-60"
-                    >
-                      Generate
-                    </button>
-                  </div>
-                </div>
+              <LoanReportsDashboard loans={loans} payments={payments} draws={draws} selected={selected} reportData={reportData} reportMonth={reportMonth} setReportMonth={setReportMonth}>
                 <div className="report-print-area">
-                  {reportSelections.statement && reportData && (
+                  {reportData && (
                     <div className="report-page-break text-[11px] text-gray-800">
                       <div className="border border-gray-300 p-4">
                         <div className="flex items-start justify-between gap-4">
@@ -2637,8 +2586,8 @@ export default function LoanManagerMock() {
                           </div>
                           <div className="text-right min-w-[220px]">
                             <div className="text-lg font-semibold">Mortgage Statement</div>
-                            <div className="text-xs text-gray-600">Statement Date: {reportData.statementDateLabel}</div>
-                            <div className="text-xs text-gray-600">Payment Due Date: {reportData.dueDateLabel}</div>
+                            <div className="text-xs text-gray-600">Statement Date: {fmt(reportData.statementDateLabel)}</div>
+                            <div className="text-xs text-gray-600">Payment Due Date: {fmt(reportData.dueDateLabel)}</div>
                             <div className="text-xs text-gray-600">Account Number: {reportData.accountNumber || '-'}</div>
                             <div className="mt-2 border border-gray-300 bg-gray-50 p-2 text-right">
                               <div className="text-[10px] uppercase tracking-wide text-gray-500">Amount Due</div>
@@ -2666,8 +2615,8 @@ export default function LoanManagerMock() {
                             <div className="flex justify-between"><span>Status</span><span>{reportData.statusLabel}</span></div>
                             <div className="flex justify-between"><span>Interest Rate</span><span>{round2((selected.APR || 0) * 100).toFixed(3)}%</span></div>
                             <div className="flex justify-between"><span>Origination Date</span><span>{fmt(selected.OriginationDate)}</span></div>
-                            <div className="flex justify-between"><span>Maturity Date</span><span>{reportData.maturityDate || '-'}</span></div>
-                            <div className="flex justify-between"><span>Current Payoff Date</span><span>{reportData.payoffDateLabel}</span></div>
+                            <div className="flex justify-between"><span>Maturity Date</span><span>{fmt(reportData.maturityDate)}</span></div>
+                            <div className="flex justify-between"><span>Current Payoff Date</span><span>{fmt(reportData.payoffDateLabel)}</span></div>
                             <div className="flex justify-between"><span>Outstanding Principal</span><span>{money(reportData.balanceEnd)}</span></div>
                           </div>
                           <div className="border border-gray-300 p-2">
@@ -2765,7 +2714,7 @@ export default function LoanManagerMock() {
                     </div>
                   )}
                 </div>
-              </div>
+              </LoanReportsDashboard>
             </>
           )}
         </div>
@@ -2913,7 +2862,7 @@ function EditableDate({ label, value, edit, onChange, size, id, name }) {
       {edit ? (
         <input id={fieldId} name={name || fieldId} type="date" defaultValue={value} onChange={(e)=>onChange(e.target.value)} className={`w-full rounded-xl border ${sizes.input}`} />
       ) : (
-        <div className={`rounded-xl border bg-white ${sizes.display}`}>{toISODate(value)}</div>
+        <div className={`rounded-xl border bg-white ${sizes.display}`}>{formatLoanDate(value)}</div>
       )}
     </div>
   );

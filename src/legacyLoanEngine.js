@@ -169,6 +169,7 @@ export function recalcLoanPayments(loan, allPayments, allDraws = []) {
 
       updatedPayments.push({
         ...ev,
+        AppliedDueDate: scheduled ? toISODate(due) : toISODate(evDate),
         InterestPortion: round2(interestPaid),
         PrincipalPortion: round2(principalPaid),
       });
