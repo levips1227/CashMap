@@ -19,6 +19,7 @@
   --panel-strong: rgba(255, 255, 255, 0.96);
   --primary: #155eef;
   --teal: #0f766e;
+  --action-gradient: linear-gradient(135deg, #155eef, #0f766e);
   --sand: #b45309;
   --rose: #c2410c;
   --success: #15803d;
@@ -365,7 +366,7 @@ code {
 
 .primary-button {
   padding: 0.85rem 1.15rem;
-  background: linear-gradient(135deg, #155eef, #0f766e);
+  background: var(--action-gradient);
   color: #ffffff;
   box-shadow: 0 12px 22px rgba(21, 94, 239, 0.28);
 }
@@ -1393,7 +1394,7 @@ code {
 }
 
 .legacy-loan-manager .bg-violet-600 {
-  background: linear-gradient(135deg, #155eef, #0f766e) !important;
+  background: var(--action-gradient) !important;
   color: #ffffff !important;
 }
 
@@ -1478,4 +1479,37 @@ code {
   .settings-modal {
     max-height: calc(100vh - 1.7rem);
   }
+}
+
+/* Shared button feedback: CSS only, with no label or layout changes. */
+button {
+  --button-glow-blue: rgba(21, 94, 239, 0.32);
+  --button-glow-teal: rgba(15, 118, 110, 0.30);
+  transition: transform 220ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+button.danger-button, button.link-button.danger {
+  --button-glow-blue: rgba(180, 35, 24, 0.24);
+  --button-glow-teal: rgba(194, 65, 12, 0.24);
+}
+button:not(:disabled):not([aria-disabled="true"]):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 3px;
+  box-shadow: -4px 3px 18px var(--button-glow-blue), 4px 3px 18px var(--button-glow-teal);
+}
+@media (hover: hover) and (pointer: fine) {
+  button:not(:disabled):not([aria-disabled="true"]):hover {
+    transform: translateY(-2px) scale(1.02);
+    box-shadow: -5px 4px 22px var(--button-glow-blue), 5px 4px 22px var(--button-glow-teal), 0 8px 14px rgba(15, 23, 42, 0.10);
+  }
+  button:not(:disabled):not([aria-disabled="true"]):active {
+    transform: translateY(0) scale(0.99);
+  }
+}
+button:disabled:hover, button[aria-disabled="true"]:hover {
+  transform: none;
+}
+button:disabled { cursor: not-allowed; }
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none !important; }
+  button:hover, button:active { transform: none !important; }
 }

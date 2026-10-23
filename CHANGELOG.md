@@ -1,5 +1,12 @@
 # Changelog
 
+## Consistent reports palette and button feedback
+
+- Replaced report-dashboard purple colors with the shared blue-green gradient and matching selection accents.
+- Added CSS-only glow, slight hover lift, and press feedback for enabled buttons across the app, plus visible keyboard focus.
+- Respect reduced motion and hover-capable pointers; leave disabled controls stationary and retain warm glow colors for destructive buttons.
+- Mobile layouts remain unchanged pending review with the user.
+
 ## Loan date formatting and report identification
 
 - Display loan dates as MM-DD-YYYY in Loan Manager, report previews, charts, and PDFs; retain ISO date storage and native date inputs.
