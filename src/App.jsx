@@ -34,6 +34,7 @@ import {
   mergeLoanDebtRows,
 } from './debtPayoffUtils';
 import LegacyLoanManager from './LegacyLoanManager';
+import MobileTransactionLedger from './components/MobileTransactionLedger';
 import packageInfo from '../package.json';
 
 const VIEW_OPTIONS = [
@@ -1062,6 +1063,8 @@ export default function App() {
   const [editingAccountId, setEditingAccountId] = useState(null);
   const [selectedAccountId, setSelectedAccountId] = useState(null);
   const [transactionEntryMode, setTransactionEntryMode] = useState('single');
+  const [mobileEditorOpen, setMobileEditorOpen] = useState(false);
+  const transactionEditorRef = useRef(null);
   const [transactionDraft, setTransactionDraft] = useState(getDefaultTransactionDraft());
   const [batchTransactionRows, setBatchTransactionRows] = useState(() => getDefaultBatchTransactionRows());
   const [transactionImportFile, setTransactionImportFile] = useState(null);
@@ -2473,6 +2476,10 @@ export default function App() {
     setTransactionEntryMode('single');
     setEditingTransactionId(transaction.sourceType === 'manual' ? transaction.id : null);
     setTransactionDraft(buildTransactionDraftFromEntry(transaction));
+    setMobileEditorOpen(true);
+    if (window.matchMedia('(max-width: 820px)').matches) {
+      requestAnimationFrame(() => transactionEditorRef.current?.scrollIntoView({ block: 'start', behavior: 'auto' }));
+    }
   }
 
   function editRule(rule) {
@@ -2856,6 +2863,7 @@ export default function App() {
         </div>
       </header>
 
+      <nav className="mobile-navigation" aria-label="Mobile navigation"><label htmlFor="mobile-view">Go to</label><select id="mobile-view" value={activeView} onChange={(event) => setActiveView(event.target.value)}>{VIEW_OPTIONS.map((view) => <option key={view.id} value={view.id} disabled={!hasActiveHousehold && view.id !== 'overview'}>{view.label}</option>)}</select></nav>
       <nav className="view-tabs">
         {VIEW_OPTIONS.map((view) => (
           <button
@@ -3105,7 +3113,10 @@ export default function App() {
       ) : null}
 
       {hasActiveHousehold && activeView === 'transactions' ? (
-        <div className={`content-grid ${transactionEntryMode === 'batch' ? 'transaction-batch-layout' : 'split'}`}>
+        <div className={`content-grid transactions-page ${transactionEntryMode === 'batch' ? 'transaction-batch-layout' : 'split'}`}>
+          <div className="transaction-editor" ref={transactionEditorRef} data-mobile-open={mobileEditorOpen || isEditingTransactionDraft || transactionEntryMode === 'batch'}>
+            <button type="button" className="primary-button mobile-editor-toggle" aria-expanded={mobileEditorOpen || isEditingTransactionDraft || transactionEntryMode === 'batch'} aria-controls="transaction-editor-content" disabled={isEditingTransactionDraft || transactionEntryMode === 'batch'} onClick={() => setMobileEditorOpen((open) => !open)}>{isEditingTransactionDraft ? 'Editing Transaction' : transactionEntryMode === 'batch' ? 'Batch Transaction Entry' : mobileEditorOpen ? 'Hide Transaction Form' : '+ Add Transaction'}</button>
+            <div id="transaction-editor-content" className="transaction-editor-content">
           <SectionCard
             title={editingTransactionId ? 'Edit transaction' : isEditingGeneratedOccurrence ? 'Edit recurring occurrence' : transactionEntryMode === 'batch' ? 'Batch transaction entry' : 'Add transaction'}
             kicker={transactionEntryMode === 'batch' ? 'Save several rows together' : 'Manual Entry'}
@@ -3277,22 +3288,22 @@ export default function App() {
                     <tbody>
                       {batchTransactionRows.map((row, index) => (
                         <tr key={row.rowId}>
-                          <td>{index + 1}</td>
-                          <td>
+                          <td data-label="Row number">{index + 1}</td>
+                          <td data-label="Date">
                             <input
                               type="date"
                               value={row.date}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { date: event.target.value })}
                             />
                           </td>
-                          <td>
+                          <td data-label="Title">
                             <input
                               value={row.title}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { title: event.target.value })}
                               placeholder="Title"
                             />
                           </td>
-                          <td>
+                          <td data-label="Direction">
                             <select
                               value={row.direction}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { direction: event.target.value })}
@@ -3302,7 +3313,7 @@ export default function App() {
                               ))}
                             </select>
                           </td>
-                          <td>
+                          <td data-label="Status">
                             <select
                               value={row.status}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { status: event.target.value })}
@@ -3312,7 +3323,7 @@ export default function App() {
                               ))}
                             </select>
                           </td>
-                          <td>
+                          <td data-label="Amount">
                             <input
                               type="number"
                               step="0.01"
@@ -3322,7 +3333,7 @@ export default function App() {
                               placeholder="0.00"
                             />
                           </td>
-                          <td>
+                          <td data-label="Account">
                             <select
                               value={row.accountId}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { accountId: Number(event.target.value) })}
@@ -3333,7 +3344,7 @@ export default function App() {
                               ))}
                             </select>
                           </td>
-                          <td>
+                          <td data-label="To account">
                             {row.direction === 'transfer' ? (
                               <select
                                 value={row.toAccountId}
@@ -3348,7 +3359,7 @@ export default function App() {
                               <span className="table-secondary">—</span>
                             )}
                           </td>
-                          <td>
+                          <td data-label="Category">
                             <CategoryPicker
                               value={row.category}
                               onChange={(category) => updateBatchTransactionRow(row.rowId, { category })}
@@ -3356,14 +3367,14 @@ export default function App() {
                               placeholder="Category"
                             />
                           </td>
-                          <td>
+                          <td data-label="Notes">
                             <input
                               value={row.notes}
                               onChange={(event) => updateBatchTransactionRow(row.rowId, { notes: event.target.value })}
                               placeholder="Optional"
                             />
                           </td>
-                          <td>
+                          <td data-label="Actions">
                             <button
                               type="button"
                               className="link-button danger"
@@ -3392,6 +3403,8 @@ export default function App() {
             )}
           </SectionCard>
 
+            </div>
+          </div>
           <SectionCard title="Ledger view" kicker="Projected + actual transactions">
             <div className="ledger-toolbar">
               <label className="check-cell ledger-select-all">
@@ -3427,6 +3440,7 @@ export default function App() {
                 ) : null}
               </div>
             </div>
+            <MobileTransactionLedger entries={sortedVisibleEntries} sort={ledgerSort} onSortChange={setLedgerSort} isSelectable={isSelectableLedgerEntry} isSelected={(entry) => selectedLedgerEntryIds.includes(getLedgerSelectionId(entry))} onToggle={toggleLedgerEntrySelection} onEdit={editTransaction} onDelete={removeTransaction} statusClassName={statusClassName} directionClassName={directionClassName} />
             <div className="table-wrap ledger-table-wrap">
               <table className="data-table ledger-table">
                 <thead>

@@ -1,5 +1,26 @@
 # Changelog
 
+## Shorter mobile card header
+
+- Move the amount to the top right beside the date/title, with direction/status badges underneath; remove the separate amount row.
+- Keep text sizes, selection, account/category, balances, and actions unchanged; long content can wrap within the card.
+
+## Mobile control widths and denser transaction cards
+
+- Constrain date/month controls and Safari date internals to field widths, reduce padding without shrinking text, and stack date filters below 360px.
+- Remove excess mobile button stretching and minimum control widths; wrap account/actions and constrain planner, report, and summary layouts.
+- Place flow/status badges left of the transaction amount; show account, category, both balances, and edit/delete actions directly without Details.
+- Preserve desktop and PDF layouts and existing transaction handlers; update card rendering checks.
+
+## Mobile Transactions and compact top navigation
+
+- Added a mobile-only top navigation selector while retaining desktop tabs.
+- Present filtered/sorted ledger entries as phone cards with expandable Details, shared selection, and existing edit/delete actions.
+- Collapse the phone transaction editor until needed; open and scroll to it when editing.
+- Stack batch-entry fields into labeled mobile rows without changing import/save logic.
+- Constrain grid/panel widths and fit header, account, date, and status controls to vertical screens; use 16px mobile inputs to avoid iOS focus zoom.
+- Preserve desktop ledger/editor presentation and approved report/PDF layouts. Add component rendering checks; live phone viewport verification remains outstanding.
+
 ## Consistent reports palette and button feedback
 
 - Replaced report-dashboard purple colors with the shared blue-green gradient and matching selection accents.

@@ -298,4 +298,18 @@ Displayed Loan Manager dates and PDF dates use MM-DD-YYYY. Stored values and nat
 
 ### Button appearance and interaction
 
-Reports controls now share the application's blue-green gradient and accents. Enabled buttons use CSS-only blue/teal glow and a slight lift on mouse hover, with keyboard focus outlines. Destructive buttons retain warm-colored feedback. Disabled buttons do not animate; reduced-motion preferences suppress movement, and touch devices do not get persistent hover effects. No animation dependency is required. Mobile layout changes are pending a separate review and discussion.
+Reports controls now share the application's blue-green gradient and accents. Enabled buttons use CSS-only blue/teal glow and a slight lift on mouse hover, with keyboard focus outlines. Destructive buttons retain warm-colored feedback. Disabled buttons do not animate; reduced-motion preferences suppress movement, and touch devices do not get persistent hover effects. No animation dependency is required. The first mobile pass focuses on Transactions and compact top navigation; other mobile screens can be refined separately.
+
+### Mobile Transactions and navigation
+
+At viewport widths of 820px or less, the app uses a compact top navigation selector and Transactions switches from the desktop ledger table to readable vertical cards. Each card shows date, title, amount, flow, account, and status; Category, both balances, and the existing edit/delete actions are visible directly on each card; flow/status badges sit to the left of the amount. Sort controls and bulk selection/status changes share the same state as the desktop ledger. Opening balances remain read-only and recurring occurrences retain their existing edit behavior.
+
+The phone add-transaction form starts collapsed and opens when editing a transaction. Batch entry keeps the same fields and save/import behavior, displayed as labeled vertical rows. Header controls, date filters, and form fields fit the viewport, and mobile text fields use 16px text to avoid iOS focus zoom. These responsive styles do not replace the desktop table, navigation tabs, or editor layout. PDF reports retain their approved layout.
+
+Verification: `node scripts/testMobileLedger.mjs`, `npm run lint`, and `npm run build`. Component rendering checks cover actions, selection, transfers, zero balances, and empty results; device/browser layout still needs live review on phones.
+
+### Mobile width and card density refinements
+
+Mobile controls use less surrounding padding without reducing text sizes. Date/month controls are constrained to their field width, including Safari date internals; on very narrow screens (360px or less) the two date filters stack. Action buttons size to their content instead of stretching across form rows, while retaining 44px touch heights. Mobile report filters, planner inputs, summary grids, and account/action headers also have constrained or wrapping layouts. Desktop styling and PDF layouts are unchanged. Transaction cards show flow/status beside the amount and display account, category, balances, and actions without expanding a Details section.
+
+Mobile transaction cards place the amount in the upper-right corner beside the date/title, with direction and status immediately below it. This removes the separate amount row while preserving text sizes, visible balances, and actions.
