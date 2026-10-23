@@ -2,35 +2,33 @@
 
 CashMap is a personal finance web application for cash-flow projections, transactions, recurring payments, budgets, account reconciliation, household sharing, and loan management.
 
-## Loan Manager Reports
+See [CHANGELOG.md](CHANGELOG.md) for release and implementation history.
 
-In **Loans → Loan Manager → Reports**, choose Monthly Statement, Interest Report, or Principal & Balance Report. The dashboard retains the statement preview and shows summary cards and a per-loan table for period reports. **Download PDF** saves a standalone report directly, without opening the browser print dialog or including the application navigation. PDF generation is imported with the reports dashboard to avoid click-time module loading failures.
-
-- Monthly statements use the loan selected in the loan list and the chosen statement month.
-- Interest and principal reports support one, several, or all loans via borrower/loan checkboxes, with year to date, last 12 months, calendar years, and custom dates. Both date boundaries are inclusive and apply to installment due dates for scheduled payments. Principal-only extras, draws, and originations use actual dates. Last 12 months ends today and starts the day after the same date last year (with leap-day handling).
-- Interest paid and principal paid use recorded payment portions, excluding projections and escrow. The existing servicing engine identifies the installment each scheduled payment satisfies; this includes split, early, and late payments. For example, an October 1 installment paid September 30 is included in October. Report filtering, summaries, monthly breakdowns, and balances all use this applied-period basis. Activity lists both paid and applied dates. Principal-only extras keep their actual dates. Loans without a usable term/schedule fall back to recorded dates. Periods with no payments show zero.
-- Net principal change equals new borrowing (original disbursements and draws) minus principal repaid. Negative change means debt decreased. Opening balance is immediately before the range and closing balance includes the final day, both on the applied-period basis (these can differ from posting-date balances). Adjustments are included when entered as draws or principal payment entries; there is no separate adjustment ledger. Missing origination dates are flagged because historical original balances cannot be assigned reliably.
-- PDFs use the proven jsPDF/AutoTable direct-download generator, with selectable text, neutral statement-style tables, automatic pagination, and two-column statement information panels. No screenshot capture is used. The monthly statement preview retains its existing layout; the PDF recreates those sections in a print layout rather than capturing browser pixels. Period reports retain applied-payment dates and use three separate months per row, with each month showing its interest and principal totals (12 months occupy four rows). Principal/balance details remain in the loan summary and activity sections.
-
-
-Local development: run `npm run dev:full`, then open `http://localhost:5173/` (API on port 4000). Focused report verification: `node scripts/testLoanReports.mjs`; production verification: `npm run build`.
-
-### Report changes — October 23, 2026
-
-Fixed Loan Manager report generation calling `window.print()`. Added direct PDF downloads and a reports dashboard. Follow-up: PDF downloads now capture the preview document itself using browser-native SVG capture (html-to-image) and jsPDF, replacing the separate PDF template so the statement layout stays consistent. Added multi-loan checkboxes with borrower, loan, servicer, and property details; enriched period reports with statement-style sections, monthly totals, and transaction activity. Historical balances are reconstructed from recorded activity. PDF follow-up: replaced the failing CSS capture path, removed manual color/grid conversion, and render one page at a time to avoid oversized canvases. Export errors now include their underlying reason. Monthly breakdowns now follow servicing installment assignments and use a compact three-column layout. See [CHANGELOG.md](CHANGELOG.md) for details.
+- [Runtime requirements](#runtime-requirements)
+- [Deploy updates](#updating-from-the-repository)
+- [Service commands](#production-service-commands)
+- [Production environment](#production-environment)
+- [Back up and restore](#data-and-backups)
+- [Reset an administrator](#resetting-an-administrator)
+- [Local development](#local-development)
+- [Dependency maintenance and checks](#dependency-maintenance-and-checks)
+- [Loan reports](#using-loan-reports)
+- [HTTPS and reverse proxy](#https-and-reverse-proxy)
+- [Installable web app](#installable-web-app)
+- [Versioning](#versioning)
 
 ## Runtime Requirements
 
 - Node.js `20.19+` or `22.12+`
 - npm
 - A production HTTPS reverse proxy such as Nginx
-- systemd on the current Oracle Linux server
+- systemd on the Ubuntu production server hosted on Oracle Cloud
 
 The production application is served by Express on port `4000`. Express serves the compiled Vite files from `dist/`.
 
 ## Updating From The Repository
 
-These commands assume the production checkout is `/home/ubuntu/CashMap` and the systemd service is named `cashmap`.
+Create a [verified production backup](#ubuntu-full-project-backup-and-restore) before updating. These commands assume the production checkout is `/home/ubuntu/CashMap` and the systemd service is named `cashmap`.
 
 ```bash
 cd /home/ubuntu/CashMap
@@ -65,6 +63,8 @@ If `git pull` reports tracked local changes, do not overwrite them blindly. Insp
 git status
 git diff
 ```
+
+Stop before restarting if installation or the build fails.
 
 Production source files should not be edited directly. Commit changes locally, push them to GitHub, and then pull them into production.
 
@@ -162,6 +162,33 @@ Confirm the correct npm path with `command -v npm` before changing `ExecStart`.
 
 ## Data And Backups
 
+### Ubuntu full-project backup and restore
+
+From `/home/ubuntu/CashMap`, run:
+
+```bash
+bash scripts/cashmapBackup.sh backup
+bash scripts/cashmapBackup.sh list
+```
+
+The backup command briefly stops CashMap, archives the entire project (including hidden files, data, dependencies, and Git history), compares contents and file lists while stopped, writes a checksum, and restarts the service. Wait for `PASS`. Backups are private and stored outside the project at `/home/ubuntu/cashmap-backups`. Failures restart the service and do not print `PASS`.
+
+Restore using the actual filename shown by `list` (the filename below is an example):
+
+```bash
+bash scripts/cashmapBackup.sh restore CashMap-20261023-171617.tar.gz
+```
+
+Restore verifies the checksum and archive before stopping CashMap, preserves the current project in a timestamped sibling folder, extracts and compares the restored files, then restarts. If extraction or comparison fails, it puts the previous installation back. Restore rolls application data and settings back to the backup date; use archives created by this project's backup process. Keep any preserved folders private because they include `.env` and data.
+
+After either command, check startup:
+
+```bash
+curl -fsS --retry 10 --retry-connrefused --retry-delay 1 http://127.0.0.1:4000/api/health
+```
+
+This covers the project directory, not external Nginx/systemd configuration or installed system runtimes. Stop other edits/deployment activity during backup/restore. Run the script as `ubuntu`; it uses `sudo` only for service control. For emergency use, keep a copy of the script outside the project alongside the backups.
+
 ### Complete local Windows backup and restore
 
 Stop this project's development servers (`Ctrl+C` in the `dev:full` terminal) before backing up or restoring. From the project directory, run:
@@ -186,7 +213,7 @@ To check an archive without restoring:
 python ..\CashMap-backups\projectBackup.py verify ..\CashMap-backups\CashMap-YYYYMMDD-HHMMSS.zip
 ```
 
-Dependency maintenance: run `npm.cmd audit fix` locally, then `npm.cmd audit`, `npm.cmd run lint`, `npm.cmd run build`, `node scripts/testLoanReports.mjs`, `node scripts/testMobileLedger.mjs`, and `node scripts/testServerSmoke.mjs`. The server smoke check uses disposable data and verifies production startup, frontend serving, health, login rejection, successful login, and session authentication. Review and commit the lockfile before deploying with `npm ci`; avoid fixing dependencies directly on production.
+### Production data-only backup and restore
 
 All users, households, transactions, budgets, reconciliations, and loan data are stored in:
 
@@ -196,15 +223,16 @@ All users, households, transactions, budgets, reconciliations, and loan data are
 
 The `data/` directory is excluded from Git, so `git pull` and `npm ci` do not transfer or replace production data.
 
-Create a backup directory and make a timestamped backup:
+For a data-only copy (not source code or settings), create a private backup directory and make a timestamped backup:
 
 ```bash
 mkdir -p /home/ubuntu/cashmap-backups
+chmod 700 /home/ubuntu/cashmap-backups
 cp -p /home/ubuntu/CashMap/data/budget-app.json \
   "/home/ubuntu/cashmap-backups/budget-app-$(date +%Y%m%d-%H%M%S).json"
 ```
 
-For a guaranteed point-in-time backup, briefly stop CashMap before copying:
+The full-project helper above stops the app automatically. For a consistent data-only backup, briefly stop CashMap before copying:
 
 ```bash
 sudo systemctl stop cashmap
@@ -213,7 +241,7 @@ cp -p /home/ubuntu/CashMap/data/budget-app.json \
 sudo systemctl start cashmap
 ```
 
-Restore a backup:
+Restore a data-only backup (replace `BACKUP_FILE.json` with the actual filename):
 
 ```bash
 sudo systemctl stop cashmap
@@ -251,7 +279,7 @@ npm.cmd run dev:full
 
 Local addresses:
 
-- Frontend: `http://127.0.0.1:5173`
+- Frontend: `http://localhost:5173`
 - API: `http://127.0.0.1:4000`
 
 Use `Ctrl+C` to stop the foreground development servers.
@@ -267,6 +295,33 @@ npm.cmd start
 ```
 
 `npm.cmd start` runs the production Express server and expects an existing `dist/` build.
+
+## Dependency Maintenance And Checks
+
+Make dependency updates locally, then test, review, and commit the lockfile before deploying with `npm ci`. Start from a clean Git state and make a backup first. Avoid fixing dependencies directly on production or using `npm audit fix --force` without reviewing breaking changes.
+
+```powershell
+npm.cmd audit fix
+npm.cmd audit
+npm.cmd run lint
+npm.cmd run build
+node scripts/testLoanReports.mjs
+node scripts/testMobileLedger.mjs
+node scripts/testServerSmoke.mjs
+```
+
+For routine verification without dependency changes, skip `npm.cmd audit fix`. On Ubuntu, use `npm` instead of `npm.cmd`.
+
+Report checks cover installment assignment, balances, direct PDF generation, statement layout, and multipage exports. Mobile ledger checks cover actions, selection, transfers, zero balances, and empty results. The server smoke check uses disposable data to verify production startup, frontend serving, health, rejected and successful logins, and session authentication. Phone layout and normal user workflows still need browser/device review.
+
+## Using Loan Reports
+
+1. Open **Loans > Loan Manager > Reports**.
+2. Choose Monthly Statement, Interest Report, or Principal & Balance Report.
+3. For a monthly statement, select the loan and statement month. For a period report, select one or more loans and a preset or custom date range.
+4. Select **Download PDF** to save a standalone report.
+
+See the [report reference](docs/loan-reports.md) for calculation rules, date boundaries, payment assignment, balance definitions, missing-origination warnings, and PDF behavior.
 
 ## HTTPS And Reverse Proxy
 
@@ -308,34 +363,3 @@ npm version major --no-git-tag-version
 ```
 
 Run only the one command matching the intended release.
-
-
-### PDF downloader restoration
-
-Restored jsPDF/AutoTable after capture-based export failures and removed the click-time dynamic import. Monthly breakdowns now use the requested three-column row format, replacing month cards. See [CHANGELOG.md](CHANGELOG.md).
-
-### Report layout refinements
-
-Monthly statement PDFs use compact account lines, subtotal/total separators, bold payment totals, and horizontal table rules without internal vertical borders, following the supplied statement reference. Period-report previews and PDFs share a three-months-across breakdown; a full year uses four rows. Recorded activity omits the applied-date display and uses compact rows; installment assignment calculations are unchanged.
-
-### Loan date and report identification updates
-
-Displayed Loan Manager dates and PDF dates use MM-DD-YYYY. Stored values and native date controls retain ISO dates for calculation and browser compatibility; monthly summaries keep their month/year labels. Interest Report and Principal & Balance Report show an explicit Report Period, the number of loans selected, and one identification row per loan (borrower, loan ID, interest rate, origination, scheduled maturity, and period-end outstanding principal). Monthly Statement retains its statement header.
-
-### Button appearance and interaction
-
-Reports controls now share the application's blue-green gradient and accents. Enabled buttons use CSS-only blue/teal glow and a slight lift on mouse hover, with keyboard focus outlines. Destructive buttons retain warm-colored feedback. Disabled buttons do not animate; reduced-motion preferences suppress movement, and touch devices do not get persistent hover effects. No animation dependency is required. The first mobile pass focuses on Transactions and compact top navigation; other mobile screens can be refined separately.
-
-### Mobile Transactions and navigation
-
-At viewport widths of 820px or less, the app uses a compact top navigation selector and Transactions switches from the desktop ledger table to readable vertical cards. Each card shows date, title, amount, flow, account, and status; Category, both balances, and the existing edit/delete actions are visible directly on each card; flow/status badges sit to the left of the amount. Sort controls and bulk selection/status changes share the same state as the desktop ledger. Opening balances remain read-only and recurring occurrences retain their existing edit behavior.
-
-The phone add-transaction form starts collapsed and opens when editing a transaction. Batch entry keeps the same fields and save/import behavior, displayed as labeled vertical rows. Header controls, date filters, and form fields fit the viewport, and mobile text fields use 16px text to avoid iOS focus zoom. These responsive styles do not replace the desktop table, navigation tabs, or editor layout. PDF reports retain their approved layout.
-
-Verification: `node scripts/testMobileLedger.mjs`, `npm run lint`, and `npm run build`. Component rendering checks cover actions, selection, transfers, zero balances, and empty results; device/browser layout still needs live review on phones.
-
-### Mobile width and card density refinements
-
-Mobile controls use less surrounding padding without reducing text sizes. Date/month controls are constrained to their field width, including Safari date internals; on very narrow screens (360px or less) the two date filters stack. Action buttons size to their content instead of stretching across form rows, while retaining 44px touch heights. Mobile report filters, planner inputs, summary grids, and account/action headers also have constrained or wrapping layouts. Desktop styling and PDF layouts are unchanged. Transaction cards show flow/status beside the amount and display account, category, balances, and actions without expanding a Details section.
-
-Mobile transaction cards place the amount in the upper-right corner beside the date/title, with direction and status immediately below it. This removes the separate amount row while preserving text sizes, visible balances, and actions.

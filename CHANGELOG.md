@@ -66,3 +66,41 @@ The entries below describe earlier iterations; capture-based generation and mont
 - Restored standalone PDF downloads in place of browser printing.
 - Added interest and principal/balance reports with date presets, custom dates, and one/several/all loan selection using borrower and loan checkboxes.
 - Added statement-style previews, loan summaries, monthly totals, transaction activity, and missing-origination warnings.
+
+## Additional implementation history moved from README
+
+These notes preserve the original implementation summaries. Earlier capture-based PDF approaches and intermediate mobile layouts were superseded by the later entries above; use the README and report reference for current instructions and behavior.
+
+### Report changes — October 23, 2026
+
+Fixed Loan Manager report generation calling `window.print()`. Added direct PDF downloads and a reports dashboard. Follow-up: PDF downloads now capture the preview document itself using browser-native SVG capture (html-to-image) and jsPDF, replacing the separate PDF template so the statement layout stays consistent. Added multi-loan checkboxes with borrower, loan, servicer, and property details; enriched period reports with statement-style sections, monthly totals, and transaction activity. Historical balances are reconstructed from recorded activity. PDF follow-up: replaced the failing CSS capture path, removed manual color/grid conversion, and render one page at a time to avoid oversized canvases. Export errors now include their underlying reason. Monthly breakdowns now follow servicing installment assignments and use a compact three-column layout. See [CHANGELOG.md](CHANGELOG.md) for details.
+
+### PDF downloader restoration
+
+Restored jsPDF/AutoTable after capture-based export failures and removed the click-time dynamic import. Monthly breakdowns now use the requested three-column row format, replacing month cards. See [CHANGELOG.md](CHANGELOG.md).
+
+### Report layout refinements
+
+Monthly statement PDFs use compact account lines, subtotal/total separators, bold payment totals, and horizontal table rules without internal vertical borders, following the supplied statement reference. Period-report previews and PDFs share a three-months-across breakdown; a full year uses four rows. Recorded activity omits the applied-date display and uses compact rows; installment assignment calculations are unchanged.
+
+### Loan date and report identification updates
+
+Displayed Loan Manager dates and PDF dates use MM-DD-YYYY. Stored values and native date controls retain ISO dates for calculation and browser compatibility; monthly summaries keep their month/year labels. Interest Report and Principal & Balance Report show an explicit Report Period, the number of loans selected, and one identification row per loan (borrower, loan ID, interest rate, origination, scheduled maturity, and period-end outstanding principal). Monthly Statement retains its statement header.
+
+### Button appearance and interaction
+
+Reports controls now share the application's blue-green gradient and accents. Enabled buttons use CSS-only blue/teal glow and a slight lift on mouse hover, with keyboard focus outlines. Destructive buttons retain warm-colored feedback. Disabled buttons do not animate; reduced-motion preferences suppress movement, and touch devices do not get persistent hover effects. No animation dependency is required. The first mobile pass focuses on Transactions and compact top navigation; other mobile screens can be refined separately.
+
+### Mobile Transactions and navigation
+
+At viewport widths of 820px or less, the app uses a compact top navigation selector and Transactions switches from the desktop ledger table to readable vertical cards. Each card shows date, title, amount, flow, account, and status; Category, both balances, and the existing edit/delete actions are visible directly on each card; flow/status badges sit to the left of the amount. Sort controls and bulk selection/status changes share the same state as the desktop ledger. Opening balances remain read-only and recurring occurrences retain their existing edit behavior.
+
+The phone add-transaction form starts collapsed and opens when editing a transaction. Batch entry keeps the same fields and save/import behavior, displayed as labeled vertical rows. Header controls, date filters, and form fields fit the viewport, and mobile text fields use 16px text to avoid iOS focus zoom. These responsive styles do not replace the desktop table, navigation tabs, or editor layout. PDF reports retain their approved layout.
+
+Verification: `node scripts/testMobileLedger.mjs`, `npm run lint`, and `npm run build`. Component rendering checks cover actions, selection, transfers, zero balances, and empty results; device/browser layout still needs live review on phones.
+
+### Mobile width and card density refinements
+
+Mobile controls use less surrounding padding without reducing text sizes. Date/month controls are constrained to their field width, including Safari date internals; on very narrow screens (360px or less) the two date filters stack. Action buttons size to their content instead of stretching across form rows, while retaining 44px touch heights. Mobile report filters, planner inputs, summary grids, and account/action headers also have constrained or wrapping layouts. Desktop styling and PDF layouts are unchanged. Transaction cards show flow/status beside the amount and display account, category, balances, and actions without expanding a Details section.
+
+Mobile transaction cards place the amount in the upper-right corner beside the date/title, with direction and status immediately below it. This removes the separate amount row while preserving text sizes, visible balances, and actions.
